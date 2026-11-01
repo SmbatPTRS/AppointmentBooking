@@ -91,8 +91,7 @@ public sealed class AvailabilityCalculator
         if (startLocal < opening || startLocal >= closing || durationTicks > closing.Ticks - startLocal.Ticks)
             return null;
         var endLocal = startLocal.AddTicks(durationTicks);
-        if (hours.BreakStartsAt is { } breakStart && hours.BreakEndsAt is { } breakEnd &&
-            startLocal < input.Date.ToDateTime(breakEnd) && endLocal > input.Date.ToDateTime(breakStart))
+        if (!ScheduleRules.FitsWorkingInterval(hours, startLocal, endLocal))
             return null;
 
         var zone = input.BusinessTimeZone;

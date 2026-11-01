@@ -32,7 +32,7 @@ D supplies shared Telegram state/sender/navigation. No transport or shared ident
 implementation is included in this groundwork.
 
 No database uniqueness, permission, persistence or transport guarantee is proved
-by the pure unit tests. Duplicate day-off and offering checks remain service/DB work.
+by the pure unit tests. Atomic duplicate checks and database constraints remain service/DB integration work.
 
 ## Proposed schedule changes
 
@@ -61,3 +61,34 @@ proposed addition. A recurring day off and a specific date on that weekday may
 coexist: they are distinct rules. Database uniqueness and race protection still
 require A's mappings and C's lock boundary. Availability and schedule-change
 validation reject malformed duplicate input rather than hiding data errors.
+
+## Shared interval rule
+
+ScheduleRules.FitsWorkingInterval is used by both availability and proposed schedule
+validation. It checks the whole same-day local interval against opening, closing
+and break boundaries. Cross-check tests exercise both consumers on the same start
+grid for 1/30/40/90-minute durations. Existing bookings need not match a newly
+anchored start grid; only new requests must match that grid.
+
+## Handoff checklist for A and C (proposed; not agreed signatures)
+
+| Owner | Required information/behavior | B consumer |
+| --- | --- | --- |
+| A | Service: Guid ID, name, active flag; no global price/duration | Catalog DTOs/repository |
+| A | StaffService: Guid ID, staff/service IDs, decimal price, integer duration, active flag; unique staff/service pair | Catalogue and availability |
+| A | WorkingHours: staff ID, TimeOnly opens/closes, nullable paired break endpoints; one row per staff | ScheduleRules |
+| A | StaffDayOff: ID, staff ID, nullable DayOfWeek or DateOnly; exactly one; unique staff/weekday and staff/date | Days-off operations |
+| A | Staff active state and business timezone/currency, shared access operations, IClock and error mappings | Future B services |
+| C | Confirmed intervals for one employee overlapping a requested UTC range: start < rangeEnd AND end > rangeStart | Availability input |
+| C | All future confirmed intervals affected by schedule changes, without a 30-day cutoff | ScheduleChangeValidator |
+| C | Employee-scoped transaction lock on the same context/connection as repositories | B schedule/offering mutations |
+| A/C | One consistent lock ordering for shared service activation and offering changes against booking creation | Future CatalogService |
+
+CancellationToken and scoped lifetime must be retained by future async repository
+and service methods. This document requests capabilities; it does not change A/C
+interfaces or assert that the team has accepted a method signature.
+
+B-owned service/repository files remain placeholders until the shared model and
+permission/clock/transaction/query contracts are coordinated. HTTP (Task 10),
+Telegram feature handlers (Task 11) and real-database acceptance (Task 12) remain
+pending. Tasks 07–09 are groundwork, not complete end-to-end features.

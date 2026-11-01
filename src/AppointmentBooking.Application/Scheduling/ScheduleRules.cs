@@ -15,6 +15,23 @@ public static class ScheduleRules
             throw new ArgumentException("The break must be ordered and fit inside working hours.", nameof(hours));
     }
 
+    /// <summary>
+    /// Checks a complete business-local interval against hours and the optional
+    /// break. Timezone conversion, days off and booking overlaps are separate.
+    /// Same-day intervals use [start, end), allowing touching boundaries.
+    /// </summary>
+    public static bool FitsWorkingInterval(WorkingHoursModel hours, DateTime startLocal, DateTime endLocal)
+    {
+        Validate(hours);
+        if (endLocal <= startLocal || startLocal.Date != endLocal.Date)
+            return false;
+        var date = DateOnly.FromDateTime(startLocal);
+        if (startLocal < date.ToDateTime(hours.OpensAt) || endLocal > date.ToDateTime(hours.ClosesAt))
+            return false;
+        return hours.BreakStartsAt is not { } breakStart || hours.BreakEndsAt is not { } breakEnd ||
+            startLocal >= date.ToDateTime(breakEnd) || endLocal <= date.ToDateTime(breakStart);
+    }
+
     public static void Validate(DayOffModel dayOff)
     {
         ArgumentNullException.ThrowIfNull(dayOff);

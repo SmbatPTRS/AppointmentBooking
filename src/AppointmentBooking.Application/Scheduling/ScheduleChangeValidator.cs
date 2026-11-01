@@ -51,15 +51,8 @@ public sealed class ScheduleChangeValidator
             ScheduleRules.IsDayOff(date, daysOff))
             return false;
 
-        var opening = date.ToDateTime(hours.OpensAt);
-        var closing = date.ToDateTime(hours.ClosesAt);
-        if (start.DateTime < opening || end.DateTime > closing)
-            return false;
-        if (hours.BreakStartsAt is { } breakStart && hours.BreakEndsAt is { } breakEnd &&
-            start.DateTime < date.ToDateTime(breakEnd) && end.DateTime > date.ToDateTime(breakStart))
-            return false;
         // Existing bookings retain their saved duration; no new start grid or
         // current offering duration is applied when evaluating a schedule edit.
-        return true;
+        return ScheduleRules.FitsWorkingInterval(hours, start.DateTime, end.DateTime);
     }
 }
