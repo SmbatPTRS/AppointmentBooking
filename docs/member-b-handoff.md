@@ -92,3 +92,18 @@ B-owned service/repository files remain placeholders until the shared model and
 permission/clock/transaction/query contracts are coordinated. HTTP (Task 10),
 Telegram feature handlers (Task 11) and real-database acceptance (Task 12) remain
 pending. Tasks 07–09 are groundwork, not complete end-to-end features.
+
+## B Telegram text input (Task 11 groundwork)
+
+CatalogScheduleInputParser is scoped to catalogue/schedule handlers, not D's shared
+callback parser. Proposed prompts should show: price `5000.25` (dot decimal, no
+thousands separators/currency suffix), duration `40` (positive integer minutes),
+date `2026-11-12` and time `09:05` (24-hour, minute precision). Outer whitespace is
+accepted. Price must be nonnegative and exactly representable as decimal; overflow
+and silent rounding are rejected. No additional business price ceiling or decimal
+scale policy is introduced.
+
+Parsing does not enforce ownership, booking window, hours/break relationships,
+duplicate records or persist anything. Future B handlers must call services after
+parsing and leave the current conversation step usable after a failed parse.
+Handlers/state/navigation remain pending D's shared contracts.
