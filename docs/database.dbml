@@ -1,0 +1,91 @@
+Project AppointmentBooking {
+  database_type: 'PostgreSQL'
+  Note: 'Target schema, not an EF migration. Explicitly map these snake_case names in EF configurations.'
+}
+Enum booking_status {
+  Confirmed
+  Cancelled
+  Completed
+}
+Table business_settings {
+  id int [pk, note: 'CHECK id = 1; seed one row']
+  display_name varchar(200) [not null]
+  staff_label varchar(100) [not null]
+  time_zone_id varchar(100) [not null, note: 'Example: Asia/Yerevan']
+  currency_code varchar(3) [not null, note: 'Example: AMD']
+}
+Table users {
+  id uuid [pk]
+  telegram_user_id bigint [not null, unique]
+  display_name varchar(200) [not null]
+  telegram_username varchar(100)
+  created_at_utc timestamptz [not null]
+}
+Table staff_members {
+  id uuid [pk]
+  user_id uuid [not null, unique]
+  display_name varchar(200) [not null]
+  is_active boolean [not null, default: true]
+}
+Table services {
+  id uuid [pk]
+  name varchar(200) [not null]
+  is_active boolean [not null, default: true]
+}
+Table staff_services {
+  id uuid [pk]
+  staff_member_id uuid [not null]
+  service_id uuid [not null]
+  price decimal(12,2) [not null, note: 'CHECK price >= 0']
+  duration_minutes int [not null, note: 'CHECK duration_minutes > 0']
+  is_active boolean [not null, default: true]
+  indexes {
+    (staff_member_id, service_id) [unique]
+    (id, staff_member_id) [unique, note: 'Target of composite booking FK']
+  }
+}
+Table working_hours {
+  id uuid [pk]
+  staff_member_id uuid [not null, unique]
+  opens_at time [not null]
+  closes_at time [not null]
+  break_starts_at time
+  break_ends_at time
+  Note: 'One fixed daily schedule per employee. CHECK opens_at < closes_at; break endpoints both NULL or both present and within hours.'
+}
+Table staff_days_off {
+  id uuid [pk]
+  staff_member_id uuid [not null]
+  weekday int [note: '0 Sunday through 6 Saturday; CHECK bounds']
+  date date
+  Note: 'CHECK exactly one of weekday/date is non-null. Add partial unique indexes on (staff_member_id, weekday) and (staff_member_id, date).'
+}
+Table bookings {
+  id uuid [pk]
+  client_user_id uuid [not null]
+  staff_member_id uuid [not null]
+  staff_service_id uuid [not null]
+  request_id uuid [not null]
+  starts_at_utc timestamptz [not null]
+  ends_at_utc timestamptz [not null]
+  price decimal(12,2) [not null]
+  duration_minutes int [not null]
+  status booking_status [not null, note: 'Store as string with EF HasConversion<string>(); add status CHECK, not a PostgreSQL enum']
+  created_at_utc timestamptz [not null]
+  cancelled_at_utc timestamptz
+  completed_at_utc timestamptz
+  indexes {
+    (client_user_id, request_id) [unique]
+    (staff_member_id, starts_at_utc)
+    (client_user_id, starts_at_utc)
+  }
+  Note: 'CHECK end > start, price >= 0, duration > 0; end = start + captured duration. Partial GiST exclusion constraint for Confirmed intervals. Expected confirmation values equal accepted snapshots on successful creation.'
+}
+Ref: staff_members.user_id > users.id [delete: restrict]
+Ref: staff_services.staff_member_id > staff_members.id [delete: restrict]
+Ref: staff_services.service_id > services.id [delete: restrict]
+Ref: working_hours.staff_member_id > staff_members.id [delete: restrict]
+Ref: staff_days_off.staff_member_id > staff_members.id [delete: restrict]
+Ref: bookings.client_user_id > users.id [delete: restrict]
+Ref: bookings.staff_member_id > staff_members.id [delete: restrict]
+Ref: bookings.(staff_service_id, staff_member_id) > staff_services.(id, staff_member_id) [delete: restrict]

@@ -1,0 +1,16 @@
+.git/
+.github/
+**/.vs/
+**/.idea/
+**/bin/
+**/obj/
+**/node_modules/
+**/TestResults/
+**/.env
+**/.env.*
+!**/.env.example
+**/*.user
+**/*.suo
+**/*.dump
+**/*.backup
+artifacts/
