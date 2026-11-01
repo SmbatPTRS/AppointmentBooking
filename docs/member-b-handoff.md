@@ -33,3 +33,17 @@ implementation is included in this groundwork.
 
 No database uniqueness, permission, persistence or transport guarantee is proved
 by the pure unit tests. Duplicate day-off and offering checks remain service/DB work.
+
+## Proposed schedule changes
+
+ScheduleChangeValidator reports supplied future confirmed intervals invalidated by
+proposed hours/breaks/days off. Supply the complete proposed schedule and every
+potentially affected future booking, including dates beyond the advance window.
+Starts at the evaluation instant are protected; already-started/history intervals
+are excluded. Current offering duration and opening-based start grid are not
+reapplied to historical accepted snapshots. No database writes or cancellation
+occur. B's future ScheduleService must reject the mutation on any conflict.
+
+The caller must enforce permissions and use C's transaction/lock before reading
+bookings and invoking this calculation. Passing an incomplete list cannot prove a
+schedule change safe. The unit tests do not replace real PostgreSQL race tests.
