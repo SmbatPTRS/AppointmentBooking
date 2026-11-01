@@ -47,3 +47,17 @@ occur. B's future ScheduleService must reject the mutation on any conflict.
 The caller must enforce permissions and use C's transaction/lock before reading
 bookings and invoking this calculation. Passing an incomplete list cannot prove a
 schedule change safe. The unit tests do not replace real PostgreSQL race tests.
+
+## Input validation before integration
+
+CatalogRules exposes entry-point-independent validation using the same DTO
+annotations as HTTP. Future CatalogService must call it and translate
+ValidationException into the agreed shared application errors. Telegram must not
+be the only validation boundary. No arbitrary currency precision/maximum-price
+policy or global catalogue price has been introduced.
+
+ScheduleRules validates unique weekday/date sets for one employee and can check a
+proposed addition. A recurring day off and a specific date on that weekday may
+coexist: they are distinct rules. Database uniqueness and race protection still
+require A's mappings and C's lock boundary. Availability and schedule-change
+validation reject malformed duplicate input rather than hiding data errors.

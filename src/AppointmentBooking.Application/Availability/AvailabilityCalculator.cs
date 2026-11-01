@@ -67,8 +67,7 @@ public sealed class AvailabilityCalculator
             throw new ArgumentException("Duration must be positive.", nameof(input));
         if (input.Hours is not null)
             ScheduleRules.Validate(input.Hours);
-        foreach (var dayOff in input.DaysOff)
-            ScheduleRules.Validate(dayOff);
+        ScheduleRules.ValidateDaysOff(input.DaysOff);
         foreach (var booking in input.ConfirmedBookings)
             if (booking.EndsAtUtc <= booking.StartsAtUtc)
                 throw new ArgumentException("Busy intervals must end after they start.", nameof(input));

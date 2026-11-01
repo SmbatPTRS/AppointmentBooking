@@ -24,6 +24,34 @@ public static class ScheduleRules
             throw new ArgumentException("Weekday must be between Sunday and Saturday.", nameof(dayOff));
     }
 
+    /// <summary>Validates the complete day-off set for one employee.</summary>
+    public static void ValidateDaysOff(IReadOnlyList<DayOffModel> daysOff)
+    {
+        ArgumentNullException.ThrowIfNull(daysOff);
+        var weekdays = new HashSet<DayOfWeek>();
+        var dates = new HashSet<DateOnly>();
+        foreach (var dayOff in daysOff)
+        {
+            Validate(dayOff);
+            if (dayOff.Weekday is { } weekday && !weekdays.Add(weekday))
+                throw new ArgumentException("Duplicate recurring weekday off.", nameof(daysOff));
+            if (dayOff.Date is { } date && !dates.Add(date))
+                throw new ArgumentException("Duplicate specific date off.", nameof(daysOff));
+        }
+    }
+
+    /// <summary>
+    /// Checks an addition against the employee's current days off. The future
+    /// service must still persist under the agreed lock and unique constraints.
+    /// </summary>
+    public static void ValidateDayOffAddition(DayOffModel proposed, IReadOnlyList<DayOffModel> existing)
+    {
+        Validate(proposed);
+        ValidateDaysOff(existing);
+        if (existing.Contains(proposed))
+            throw new ArgumentException("This day off already exists for the employee.", nameof(proposed));
+    }
+
     public static bool IsDayOff(DateOnly date, IReadOnlyList<DayOffModel> daysOff)
     {
         ArgumentNullException.ThrowIfNull(daysOff);

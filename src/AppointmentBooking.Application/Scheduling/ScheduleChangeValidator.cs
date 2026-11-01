@@ -20,8 +20,7 @@ public sealed class ScheduleChangeValidator
         ArgumentNullException.ThrowIfNull(proposedDaysOff);
         ArgumentNullException.ThrowIfNull(confirmedBookings);
         ArgumentNullException.ThrowIfNull(businessTimeZone);
-        foreach (var dayOff in proposedDaysOff)
-            ScheduleRules.Validate(dayOff);
+        ScheduleRules.ValidateDaysOff(proposedDaysOff);
 
         var conflicts = new List<AppointmentInterval>();
         foreach (var booking in confirmedBookings)
