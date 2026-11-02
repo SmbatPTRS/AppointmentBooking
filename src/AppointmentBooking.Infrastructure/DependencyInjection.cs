@@ -3,7 +3,8 @@ using AppointmentBooking.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-
+using AppointmentBooking.Application.Common;
+using AppointmentBooking.Infrastructure.Time;
 namespace AppointmentBooking.Infrastructure;
 
 public static class DependencyInjection
@@ -18,6 +19,7 @@ public static class DependencyInjection
         services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
         services.AddScoped<IUnitOfWork>(provider =>
             provider.GetRequiredService<AppDbContext>());
+        services.AddSingleton<IClock, SystemClock>();
         return services;
     }
 }
