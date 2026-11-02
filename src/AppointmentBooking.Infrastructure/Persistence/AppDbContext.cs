@@ -24,24 +24,16 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             typeof(AppDbContext).Assembly);
     }
 
-    public async Task<T> ExecuteInTransactionAsync<T>(
-        Func<CancellationToken, Task<T>> operation,
-        CancellationToken cancellationToken = default)
+    public async Task<ITransactionScope> BeginTransactionAsync(CancellationToken ct)
     {
         if (Database.CurrentTransaction is not null)
         {
             throw new InvalidOperationException(
-                "Nested transaction boundaries are not supported.");
+                "A transaction is already active on this context.");
         }
 
-        await using var transaction =
-            await Database.BeginTransactionAsync(cancellationToken);
-
-        var result = await operation(cancellationToken);
-
-        await SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-
-        return result;
+        var transaction = await Database.BeginTransactionAsync(ct);
+        return new TransactionScope(transaction);
     }
+    
 }
