@@ -32,6 +32,9 @@ public sealed class CatalogRepository(AppDbContext db) : ICatalogRepository
     public Task<StaffService?> GetOfferingAsync(Guid staffMemberId, Guid serviceId, CancellationToken ct) =>
         db.StaffServices.SingleOrDefaultAsync(o => o.StaffMemberId == staffMemberId && o.ServiceId == serviceId, ct);
 
+    public Task<StaffService?> GetOfferingByIdAsync(Guid offeringId, CancellationToken ct) =>
+        db.StaffServices.AsNoTracking().SingleOrDefaultAsync(o => o.Id == offeringId, ct);
+
     public void Add(Service service) => db.Services.Add(service);
     public void Add(StaffService offering) => db.StaffServices.Add(offering);
 }
