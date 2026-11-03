@@ -67,8 +67,7 @@ public sealed class AvailabilityCalculator
             throw new ArgumentException("Duration must be positive.", nameof(input));
         if (input.Hours is not null)
             ScheduleRules.Validate(input.Hours);
-        foreach (var dayOff in input.DaysOff)
-            ScheduleRules.Validate(dayOff);
+        ScheduleRules.ValidateDaysOff(input.DaysOff);
         foreach (var booking in input.ConfirmedBookings)
             if (booking.EndsAtUtc <= booking.StartsAtUtc)
                 throw new ArgumentException("Busy intervals must end after they start.", nameof(input));
@@ -92,8 +91,7 @@ public sealed class AvailabilityCalculator
         if (startLocal < opening || startLocal >= closing || durationTicks > closing.Ticks - startLocal.Ticks)
             return null;
         var endLocal = startLocal.AddTicks(durationTicks);
-        if (hours.BreakStartsAt is { } breakStart && hours.BreakEndsAt is { } breakEnd &&
-            startLocal < input.Date.ToDateTime(breakEnd) && endLocal > input.Date.ToDateTime(breakStart))
+        if (!ScheduleRules.FitsWorkingInterval(hours, startLocal, endLocal))
             return null;
 
         var zone = input.BusinessTimeZone;

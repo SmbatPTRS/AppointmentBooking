@@ -137,6 +137,50 @@ public sealed class AvailabilityCalculatorTests
         Assert.False(Calculator().IsAvailable(input, crossing, now));
     }
 
+    [Fact]
+    public void FullyBookedDayReturnsEmptyAndDoesNotAffectAnotherEmployeeSnapshot()
+    {
+        var busy = Input() with { ConfirmedBookings = [new(Utc(9), Utc(18))] };
+        Assert.Empty(Calculator().Calculate(busy, Now));
+        Assert.NotEmpty(Calculator().Calculate(Input(), Now));
+    }
+
+    [Fact]
+    public void LongerServiceRemovesLateStartsWithoutChangingExistingBusySnapshots()
+    {
+        AppointmentInterval[] bookings = [new(Utc(10), Utc(10, 40))];
+        var shortService = Input(30) with { ConfirmedBookings = bookings };
+        var longService = shortService with { DurationMinutes = 60 };
+        Assert.True(Calculator().IsAvailable(shortService, Utc(9, 30), Now));
+        Assert.False(Calculator().IsAvailable(longService, Utc(9, 30), Now));
+        Assert.True(Calculator().IsAvailable(longService, Utc(10, 45), Now));
+        Assert.Equal(Utc(10, 40), bookings[0].EndsAtUtc);
+    }
+
+    [Fact]
+    public void ZeroAdvanceDaysAllowsTodayOnly()
+    {
+        Assert.NotEmpty(Calculator(advance: 0).Calculate(Input(), Now));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Calculator(advance: 0).Calculate(
+            Input() with { Date = Date.AddDays(1) }, Now));
+    }
+
+    [Fact]
+    public void ExactValidationComparesInstantsAndRejectsAnotherDate()
+    {
+        Assert.True(Calculator().IsAvailable(Input(), Utc(9).ToOffset(TimeSpan.FromHours(4)), Now));
+        Assert.False(Calculator().IsAvailable(Input(), Utc(9).AddDays(1), Now));
+        Assert.False(Calculator().IsAvailable(Input(), Utc(9).AddDays(-1), Now));
+    }
+
+    [Fact]
+    public void DuplicateDaysOffAreInvalidInputRatherThanSilentEmptyAvailability()
+    {
+        var input = Input() with { DaysOff = [new(Date: Date), new(Date: Date)] };
+        Assert.Throws<ArgumentException>(() => Calculator().Calculate(input, Now));
+        Assert.Throws<ArgumentException>(() => Calculator().IsAvailable(input, Utc(9), Now));
+    }
+
     [Theory]
     [InlineData(0, 30)]
     [InlineData(-1, 30)]

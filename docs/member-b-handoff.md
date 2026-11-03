@@ -32,4 +32,78 @@ D supplies shared Telegram state/sender/navigation. No transport or shared ident
 implementation is included in this groundwork.
 
 No database uniqueness, permission, persistence or transport guarantee is proved
-by the pure unit tests. Duplicate day-off and offering checks remain service/DB work.
+by the pure unit tests. Atomic duplicate checks and database constraints remain service/DB integration work.
+
+## Proposed schedule changes
+
+ScheduleChangeValidator reports supplied future confirmed intervals invalidated by
+proposed hours/breaks/days off. Supply the complete proposed schedule and every
+potentially affected future booking, including dates beyond the advance window.
+Starts at the evaluation instant are protected; already-started/history intervals
+are excluded. Current offering duration and opening-based start grid are not
+reapplied to historical accepted snapshots. No database writes or cancellation
+occur. B's future ScheduleService must reject the mutation on any conflict.
+
+The caller must enforce permissions and use C's transaction/lock before reading
+bookings and invoking this calculation. Passing an incomplete list cannot prove a
+schedule change safe. The unit tests do not replace real PostgreSQL race tests.
+
+## Input validation before integration
+
+CatalogRules exposes entry-point-independent validation using the same DTO
+annotations as HTTP. Future CatalogService must call it and translate
+ValidationException into the agreed shared application errors. Telegram must not
+be the only validation boundary. No arbitrary currency precision/maximum-price
+policy or global catalogue price has been introduced.
+
+ScheduleRules validates unique weekday/date sets for one employee and can check a
+proposed addition. A recurring day off and a specific date on that weekday may
+coexist: they are distinct rules. Database uniqueness and race protection still
+require A's mappings and C's lock boundary. Availability and schedule-change
+validation reject malformed duplicate input rather than hiding data errors.
+
+## Shared interval rule
+
+ScheduleRules.FitsWorkingInterval is used by both availability and proposed schedule
+validation. It checks the whole same-day local interval against opening, closing
+and break boundaries. Cross-check tests exercise both consumers on the same start
+grid for 1/30/40/90-minute durations. Existing bookings need not match a newly
+anchored start grid; only new requests must match that grid.
+
+## Handoff checklist for A and C (proposed; not agreed signatures)
+
+| Owner | Required information/behavior | B consumer |
+| --- | --- | --- |
+| A | Service: Guid ID, name, active flag; no global price/duration | Catalog DTOs/repository |
+| A | StaffService: Guid ID, staff/service IDs, decimal price, integer duration, active flag; unique staff/service pair | Catalogue and availability |
+| A | WorkingHours: staff ID, TimeOnly opens/closes, nullable paired break endpoints; one row per staff | ScheduleRules |
+| A | StaffDayOff: ID, staff ID, nullable DayOfWeek or DateOnly; exactly one; unique staff/weekday and staff/date | Days-off operations |
+| A | Staff active state and business timezone/currency, shared access operations, IClock and error mappings | Future B services |
+| C | Confirmed intervals for one employee overlapping a requested UTC range: start < rangeEnd AND end > rangeStart | Availability input |
+| C | All future confirmed intervals affected by schedule changes, without a 30-day cutoff | ScheduleChangeValidator |
+| C | Employee-scoped transaction lock on the same context/connection as repositories | B schedule/offering mutations |
+| A/C | One consistent lock ordering for shared service activation and offering changes against booking creation | Future CatalogService |
+
+CancellationToken and scoped lifetime must be retained by future async repository
+and service methods. This document requests capabilities; it does not change A/C
+interfaces or assert that the team has accepted a method signature.
+
+B-owned service/repository files remain placeholders until the shared model and
+permission/clock/transaction/query contracts are coordinated. HTTP (Task 10),
+Telegram feature handlers (Task 11) and real-database acceptance (Task 12) remain
+pending. Tasks 07–09 are groundwork, not complete end-to-end features.
+
+## B Telegram text input (Task 11 groundwork)
+
+CatalogScheduleInputParser is scoped to catalogue/schedule handlers, not D's shared
+callback parser. Proposed prompts should show: price `5000.25` (dot decimal, no
+thousands separators/currency suffix), duration `40` (positive integer minutes),
+date `2026-11-12` and time `09:05` (24-hour, minute precision). Outer whitespace is
+accepted. Price must be nonnegative and exactly representable as decimal; overflow
+and silent rounding are rejected. CatalogRules separately enforces the numeric(12,2)
+price limit and the 200-character limit on trimmed service names.
+
+Parsing does not enforce ownership, booking window, hours/break relationships,
+duplicate records or persist anything. Future B handlers must call services after
+parsing and leave the current conversation step usable after a failed parse.
+Handlers/state/navigation remain pending D's shared contracts.
