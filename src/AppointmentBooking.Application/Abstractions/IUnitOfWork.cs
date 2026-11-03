@@ -2,9 +2,12 @@ namespace AppointmentBooking.Application.Abstractions;
 
 public interface IUnitOfWork
 {
-    Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+    Task<int> SaveChangesAsync(CancellationToken ct);
+    Task<ITransactionScope> BeginTransactionAsync(CancellationToken ct);
+}
 
-    Task<T> ExecuteInTransactionAsync<T>(
-        Func<CancellationToken, Task<T>> operation,
-        CancellationToken cancellationToken = default);
+public interface ITransactionScope : IAsyncDisposable
+{
+    Task CommitAsync(CancellationToken ct);
+    // DisposeAsync without Commit = rollback.
 }
