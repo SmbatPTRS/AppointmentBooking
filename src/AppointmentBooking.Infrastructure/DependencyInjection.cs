@@ -22,6 +22,7 @@ public static class DependencyInjection
         services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
         services.AddScoped<IUnitOfWork>(provider =>
             provider.GetRequiredService<AppDbContext>());
+        services.AddScoped<IScheduleRepository, ScheduleRepository>();
         services.AddScoped<ICatalogRepository, CatalogRepository>();
         services.AddScoped<IBookingRepository, BookingRepository>();
         services.AddScoped<IStaffOperationLock, PostgresStaffOperationLock>();
