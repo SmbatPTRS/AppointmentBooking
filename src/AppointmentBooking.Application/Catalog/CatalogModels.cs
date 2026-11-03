@@ -10,7 +10,7 @@ public sealed record UpdateServiceRequest(
     bool IsActive);
 
 public sealed record ConfigureStaffServiceRequest(
-    [property: Range(typeof(decimal), "0", "79228162514264337593543950335")]
+    [property: Range(typeof(decimal), "0", "9999999999.99", ParseLimitsInInvariantCulture = true)]
     decimal Price,
     [property: Range(1, int.MaxValue)] int DurationMinutes,
     bool IsActive);

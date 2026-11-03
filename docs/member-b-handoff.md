@@ -100,8 +100,8 @@ callback parser. Proposed prompts should show: price `5000.25` (dot decimal, no
 thousands separators/currency suffix), duration `40` (positive integer minutes),
 date `2026-11-12` and time `09:05` (24-hour, minute precision). Outer whitespace is
 accepted. Price must be nonnegative and exactly representable as decimal; overflow
-and silent rounding are rejected. No additional business price ceiling or decimal
-scale policy is introduced.
+and silent rounding are rejected. CatalogRules separately enforces the numeric(12,2)
+price limit and the 200-character limit on trimmed service names.
 
 Parsing does not enforce ownership, booking window, hours/break relationships,
 duplicate records or persist anything. Future B handlers must call services after

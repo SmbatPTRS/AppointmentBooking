@@ -35,6 +35,25 @@ public sealed class CatalogRulesTests
     }
 
     [Fact]
+    public void PriceMustFitNumericTwelveTwoWithoutRounding()
+    {
+        CatalogRules.Validate(new ConfigureStaffServiceRequest(9999999999.99m, 40, true));
+        CatalogRules.Validate(new ConfigureStaffServiceRequest(5.2500m, 40, true));
+        Assert.Throws<ValidationException>(() => CatalogRules.Validate(new ConfigureStaffServiceRequest(1.001m, 40, true)));
+        Assert.Throws<ValidationException>(() => CatalogRules.Validate(new ConfigureStaffServiceRequest(10000000000m, 40, true)));
+    }
+
+    [Fact]
+    public void NameLengthIsMeasuredAfterTrimmingForCreateAndUpdate()
+    {
+        var name = new string('a', 200);
+        CatalogRules.Validate(new CreateServiceRequest($" {name} "));
+        CatalogRules.Validate(new UpdateServiceRequest($" {name} ", true));
+        Assert.Throws<ValidationException>(() => CatalogRules.Validate(new CreateServiceRequest($" {name}x ")));
+        Assert.Throws<ValidationException>(() => CatalogRules.Validate(new UpdateServiceRequest($" {name}x ", true)));
+    }
+
+    [Fact]
     public void MissingRequestsFailClearly()
     {
         Assert.Throws<ArgumentNullException>(() => CatalogRules.Validate((CreateServiceRequest)null!));
