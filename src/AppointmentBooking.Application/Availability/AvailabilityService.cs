@@ -8,6 +8,15 @@ public sealed class AvailabilityService(
     IBusinessSettingsRepository settings, IBookingRepository bookings, IClock clock,
     AvailabilityCalculator calculator)
 {
+    // For final confirmation, the caller must already hold the employee lock
+    // in the booking transaction. This check alone does not reserve a slot.
+    public async Task<bool> IsAvailableAsync(Guid staffId, Guid offeringId, DateOnly businessDate,
+        DateTimeOffset requestedStart, CancellationToken ct)
+    {
+        var slots = await ListAsync(staffId, offeringId, businessDate, ct);
+        return slots.Any(slot => slot.StartsAtUtc == requestedStart);
+    }
+
     public async Task<IReadOnlyList<AvailableSlot>> ListAsync(Guid staffId, Guid offeringId, DateOnly date, CancellationToken ct)
     {
         var employee = await staff.GetByIdAsync(staffId, ct)

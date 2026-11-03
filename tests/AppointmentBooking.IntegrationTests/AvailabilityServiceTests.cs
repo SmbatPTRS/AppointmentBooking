@@ -39,17 +39,25 @@ public sealed class AvailabilityServiceTests(PostgresFixture fixture)
         Task<IReadOnlyList<AvailableSlot>> List() =>
             availability.ListAsync(staff.Id, offering.Id, new(2026, 11, 4), CancellationToken.None);
 
+        Task<bool> Check(DateTimeOffset requestedStart) =>
+            availability.IsAvailableAsync(staff.Id, offering.Id, new(2026, 11, 4), requestedStart, CancellationToken.None);
+
         var before = await List();
         var start = clock.UtcNow.AddHours(2); // 10:00 in Yerevan
         Assert.Contains(before, s => s.StartsAtUtc == start);
+        Assert.True(await Check(new DateTimeOffset(start).ToOffset(TimeSpan.FromHours(4))));
+        Assert.False(await Check(start.AddMinutes(1)));
         var booking = new Booking(user.Id, staff.Id, offering.Id, Guid.NewGuid(), start, 5000m, 30, clock.UtcNow);
         db.Bookings.Add(booking);
         await db.SaveChangesAsync();
         var during = await List();
         Assert.Equal(before.Where(s => s.EndsAtUtc <= start || s.StartsAtUtc >= start.AddMinutes(30)), during);
         Assert.Contains(during, s => s.StartsAtUtc == start.AddMinutes(30));
+        Assert.False(await Check(start));
+        Assert.True(await Check(start.AddMinutes(30)));
         booking.Cancel(clock.UtcNow);
         await db.SaveChangesAsync();
+        Assert.True(await Check(start));
         Assert.Equal(before.ToArray(), (await List()).ToArray());
     }
 }
