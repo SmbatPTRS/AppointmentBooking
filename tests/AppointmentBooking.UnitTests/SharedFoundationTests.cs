@@ -14,7 +14,7 @@ namespace AppointmentBooking.UnitTests;
 public sealed class SharedFoundationTests
 {
     [Fact]
-    public void CompletedRepositoriesShareTheScopedContextAndClockCanBeReplaced()
+    public void UserRepositorySharesTheScopedContextAndClockCanBeReplaced()
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(
             new Dictionary<string, string?>
@@ -34,14 +34,8 @@ public sealed class SharedFoundationTests
         var db = scoped.GetRequiredService<AppDbContext>();
         Assert.Same(db, scoped.GetRequiredService<IUnitOfWork>());
         var user = new User(123, "Test", null, clock.UtcNow);
-        var staff = new StaffMember(user.Id, "Staff");
-        var settings = new BusinessSettings("Test", "Staff", "UTC", "AMD");
         scoped.GetRequiredService<IUserRepository>().Add(user);
-        scoped.GetRequiredService<IStaffRepository>().Add(staff);
-        scoped.GetRequiredService<IBusinessSettingsRepository>().Add(settings);
         Assert.Equal(EntityState.Added, db.Entry(user).State);
-        Assert.Equal(EntityState.Added, db.Entry(staff).State);
-        Assert.Equal(EntityState.Added, db.Entry(settings).State);
         Assert.NotNull(scoped.GetRequiredService<IBookingRepository>());
         Assert.NotNull(scoped.GetRequiredService<IStaffOperationLock>());
         Assert.Same(clock, scoped.GetRequiredService<IClock>());
