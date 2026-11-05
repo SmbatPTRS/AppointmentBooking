@@ -6,8 +6,9 @@ an HTTP API. Owner and employee operations use shared application permission che
 
 ## Current foundation
 
-The initial skeleton provides layered projects, PostgreSQL registration, a scoped
-AppDbContext/IUnitOfWork, Swagger, health endpoints and CI for unit tests. Catalogue,
+The shared foundation provides eight domain entities and EF mappings, shared
+identity/error/clock contracts, repository wiring, migrations, a test host,
+a scoped AppDbContext/IUnitOfWork, Swagger, health endpoints and CI for unit tests. Catalogue,
 scheduling, authentication, booking rules and Telegram handlers are implemented in
 the feature tasks. This README does not claim those features already work.
 
@@ -49,6 +50,7 @@ AppDbContext implements IUnitOfWork; there is no separate forwarding UnitOfWork 
 ## Documentation
 
 - [Architecture](docs/architecture.md)
+- [Shared contracts and Task 01 handoff](docs/shared-contracts.md)
 - [Business rules](docs/business-rules.md)
 - [Database model](docs/database.dbml)
 - [API and bot flows](docs/api-and-bot-flows.md)

@@ -2,7 +2,8 @@
 
 These are proposed contracts for the feature tasks, not endpoints already implemented
 by the bootstrap. Agree DTO names and error codes before coding independently.
-HTTP uses per-user API-key authentication. Telegram uses the verified update sender.
+The shared identity/error/time conventions are recorded in [shared contracts](shared-contracts.md).
+Planned HTTP uses per-user API-key authentication. Telegram uses the verified update sender.
 Both invoke the same application services and permission checks.
 
 | Operation | Suggested endpoint | Access |
