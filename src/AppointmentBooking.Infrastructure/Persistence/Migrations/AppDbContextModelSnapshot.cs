@@ -111,6 +111,45 @@ namespace AppointmentBooking.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("AppointmentBooking.Domain.Entities.BookingCoordination", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<int?>("BusinessSettingsId")
+                        .HasColumnType("integer")
+                        .HasColumnName("business_settings_id");
+
+                    b.Property<long>("ChangeVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L)
+                        .HasColumnName("change_version");
+
+                    b.Property<Guid?>("StaffMemberId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("staff_member_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BusinessSettingsId")
+                        .IsUnique();
+
+                    b.HasIndex("StaffMemberId")
+                        .IsUnique();
+
+                    b.ToTable("booking_coordination", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_booking_coordination_one_scope", "(business_settings_id IS NULL) <> (staff_member_id IS NULL)");
+
+                            t.HasCheckConstraint("ck_booking_coordination_version", "change_version >= 0");
+                        });
+                });
+
             modelBuilder.Entity("AppointmentBooking.Domain.Entities.BusinessSettings", b =>
                 {
                     b.Property<int>("Id")
@@ -383,6 +422,19 @@ namespace AppointmentBooking.Infrastructure.Persistence.Migrations
                         .HasPrincipalKey("Id", "StaffMemberId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("AppointmentBooking.Domain.Entities.BookingCoordination", b =>
+                {
+                    b.HasOne("AppointmentBooking.Domain.Entities.BusinessSettings", null)
+                        .WithOne()
+                        .HasForeignKey("AppointmentBooking.Domain.Entities.BookingCoordination", "BusinessSettingsId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("AppointmentBooking.Domain.Entities.StaffMember", null)
+                        .WithOne()
+                        .HasForeignKey("AppointmentBooking.Domain.Entities.BookingCoordination", "StaffMemberId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("AppointmentBooking.Domain.Entities.StaffDayOff", b =>
