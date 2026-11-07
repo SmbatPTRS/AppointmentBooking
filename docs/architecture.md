@@ -40,12 +40,16 @@ Do not continue querying an aborted PostgreSQL transaction. If retries are later
 introduced, retry the WHOLE transaction, including lock acquisition and reads.
 Do not send Telegram messages inside a retryable database transaction.
 
-Feature owners add their own entity configurations, repositories, services,
-controllers/handlers, tests and registrations. A coordinates migration generation.
-D provides Telegram infrastructure; A/B/C provide their own feature screens.
+A owns all entities, enums, EF configurations, DbSets/model registration and
+migrations/snapshot. B/C supply requirements and review their mappings. C owns
+AppDbContext transaction semantics and the shared lock. Feature owners implement
+their repositories, services, adapters, tests and registrations. D provides shared
+Telegram infrastructure; A/B/C provide their own feature screens.
 
-The bootstrap does not yet implement authentication, business entities, migrations,
-Telegram polling/webhooks, or feature services. The planned tree remains the target;
-create each feature file when implementing it. AppDbContextFactory is optional:
-EF tooling can obtain the context from the API host. If added later, it must follow
-the same configuration rules and never hard-code credentials.
+The shared entities, mappings, errors, clocks, test host and schema migration are
+implemented. Authentication, feature services and Telegram transports remain
+separate feature tasks. See [shared contracts](shared-contracts.md) for the Task 01
+handoff, exact source interfaces, integration boundaries and review status.
+AppDbContextFactory is optional; EF tooling can obtain the context from the API
+host. Any future factory must follow the same configuration rules and must not
+hard-code credentials.
