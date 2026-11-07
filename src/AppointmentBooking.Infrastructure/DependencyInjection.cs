@@ -32,6 +32,7 @@ public static class DependencyInjection
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<UserService>();
         services.AddScoped<IBookingRepository, BookingRepository>();
+        services.AddScoped<IBookingCoordinationRepository, BookingCoordinationRepository>();
 
         services.AddScoped<IStaffOperationLock, PostgresStaffOperationLock>();
         services.AddSingleton<IClock, SystemClock>();
