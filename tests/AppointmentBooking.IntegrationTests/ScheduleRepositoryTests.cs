@@ -12,6 +12,10 @@ public sealed class ScheduleRepositoryTests(PostgresFixture fixture)
     public async Task ReadsOnlySelectedEmployeesHoursAndMatchingDaysOff()
     {
         await using var db = fixture.CreateContext();
+
+        // Automatically rolls back when the test ends, including on failure.
+        await using var transaction = await db.Database.BeginTransactionAsync();
+
         var first = new User(4300000011, "First", null, DateTime.UtcNow);
         var second = new User(4300000012, "Second", null, DateTime.UtcNow);
         var staff = new StaffMember(first.Id, "Aram");
