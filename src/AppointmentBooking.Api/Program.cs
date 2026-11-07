@@ -1,3 +1,7 @@
+using AppointmentBooking.Application.Availability;
+using AppointmentBooking.Application.Abstractions;
+using AppointmentBooking.Infrastructure.Repositories;
+using Microsoft.Extensions.Options;
 using AppointmentBooking.Infrastructure;
 using AppointmentBooking.Infrastructure.Persistence;
 
@@ -13,6 +17,11 @@ if (builder.Environment.IsDevelopment() && File.Exists(envFile))
 }
 
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddOptions<BookingOptions>().BindConfiguration("Booking").ValidateDataAnnotations().ValidateOnStart();
+builder.Services.AddScoped<IStaffRepository, StaffRepository>();
+builder.Services.AddScoped<IBusinessSettingsRepository, BusinessSettingsRepository>();
+builder.Services.AddScoped(provider => new AvailabilityCalculator(provider.GetRequiredService<IOptions<BookingOptions>>().Value));
+builder.Services.AddScoped<AvailabilityService>();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
