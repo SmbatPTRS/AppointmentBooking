@@ -46,12 +46,12 @@ public sealed class SharedFoundationTests
     }
 
     [Fact]
-    public void ModelRegistersExactlyTheEightSharedEntities()
+    public void ModelRegistersTheExpectedEntities()
     {
         using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
             .UseNpgsql("Host=localhost;Database=not_opened;Username=test;Password=test").Options);
         var expected = new[] { typeof(User), typeof(StaffMember), typeof(BusinessSettings),
-            typeof(Service), typeof(StaffService), typeof(WorkingHours), typeof(StaffDayOff), typeof(Booking) };
+            typeof(Service), typeof(StaffService), typeof(WorkingHours), typeof(StaffDayOff), typeof(Booking), typeof(BookingCoordination) };
         Assert.Equal(expected.OrderBy(t => t.Name), db.Model.GetEntityTypes()
             .Select(t => t.ClrType).OrderBy(t => t.Name));
         Assert.All(db.Model.GetEntityTypes().SelectMany(t => t.GetForeignKeys()),
