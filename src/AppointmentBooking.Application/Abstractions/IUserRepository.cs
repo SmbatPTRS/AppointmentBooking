@@ -12,5 +12,8 @@ public interface IUserRepository
         long telegramUserId,
         CancellationToken cancellationToken = default);
 
+    // Persists the candidate or returns the user already stored for its Telegram ID.
+    Task<User> InsertOrGetAsync(User candidate, CancellationToken cancellationToken = default);
+
     void Add(User user);
 }
