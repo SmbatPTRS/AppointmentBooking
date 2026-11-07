@@ -70,6 +70,9 @@ public static class ErrorCodes
 
     public const string OfferingChanged =
         "booking.offering_changed";
+    
+    public const string OfferingInactive =
+        "booking.offering_inactive";
 
     public const string RequestIdConflict =
         "booking.request_id_conflict";

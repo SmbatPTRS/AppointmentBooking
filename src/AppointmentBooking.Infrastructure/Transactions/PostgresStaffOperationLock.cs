@@ -6,6 +6,15 @@ namespace AppointmentBooking.Infrastructure.Transactions;
 
 public sealed class PostgresStaffOperationLock(AppDbContext db) : IStaffOperationLock
 {
+    /// <summary>
+    /// Acquires a transaction-scoped PostgreSQL advisory lock for the given employee.
+    /// Concurrent operations that lock the same employee run one at a time; the lock
+    /// is released automatically on commit or rollback. Must be called inside an
+    /// active transaction on the same connection, before reading data that the
+    /// operation depends on.
+    /// </summary>
+    /// <param name="staffMemberId">The employee whose calendar is being protected.</param>
+    /// <param name="ct">Cancellation token.</param>
     public async Task AcquireAsync(Guid staffMemberId, CancellationToken ct)
     {
         
