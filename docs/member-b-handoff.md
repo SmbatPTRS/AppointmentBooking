@@ -18,7 +18,8 @@ Tasks 10–12 and end-to-end acceptance are not complete.
 - ScheduleService exposes SetHoursAsync, ListDaysOffAsync, AddDayOffAsync and
   RemoveDayOffAsync with Actor, staff ID and CancellationToken. DayOffDto carries
   the ID needed for scoped deletion; repository entities are not returned.
-- ScheduleService calls IAccessService.RequireStaffManagementAsync. Every mutation
+- ScheduleService calls IAccessService.RequireStaffManagementAsync after acquiring
+  the employee lock for writes, avoiding pre-lock tracked staff snapshots. Every mutation
   uses IUnitOfWork and IStaffOperationLock before reading decision data or writing.
   Hours changes and day-off additions inspect all future confirmed bookings,
   including dates beyond the booking window, using the business timezone.
@@ -30,7 +31,7 @@ Tasks 10–12 and end-to-end acceptance are not complete.
 ## Verification and limits
 
 `dotnet test AppointmentBooking.sln -c Release --nologo`:
-134 unit tests and 28 PostgreSQL integration cases passed on 2026-11-08.
+134 unit tests and 31 PostgreSQL integration cases passed on 2026-11-08.
 
 Schedule tests cover persistence, duplicate constraints, scoped repository lookup,
 input errors, denied hours/day-off additions, future booking conflicts and removal.
