@@ -106,4 +106,35 @@ public sealed class CatalogServiceTests(PostgresFixture fixture)
         Assert.Empty(await sut.ListActiveOfferingsAsync(Guid.NewGuid(), default));
         Assert.Empty(db.ChangeTracker.Entries());
     }
+    private sealed class CatalogClock : IClock { public DateTime UtcNow => new(2026, 11, 8, 12, 0, 0, DateTimeKind.Utc); }
+
+    [Fact]
+    public async Task TelegramCatalogueShowsActiveNamesAndCurrentMainMenuButton()
+    {
+        await using var db = fixture.CreateContext();
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var visible = new Service("Visible-" + Guid.NewGuid());
+        var hidden = new Service("Hidden-" + Guid.NewGuid());
+        hidden.Deactivate();
+        db.AddRange(visible, hidden);
+        await db.SaveChangesAsync();
+        var sender = new FakeTelegramClient();
+        var clock = new CatalogClock();
+        var state = new AppointmentBooking.Api.Telegram.State.ConversationState(clock.UtcNow);
+        var handler = new AppointmentBooking.Api.Telegram.Handlers.CatalogHandler(
+            new CatalogService(new CatalogRepository(db), new OwnerAccess(true), db), sender, clock);
+        var context = new AppointmentBooking.Api.Telegram.TelegramHandlerContext(
+            new(new Actor(Guid.NewGuid()), 42, "Client"), 123, "/catalog", null, state);
+        await handler.HandleAsync(context, default);
+        var text = string.Join("\n", sender.SentMessages.Select(m => m.Text));
+        Assert.Contains(visible.Name, text);
+        Assert.DoesNotContain(hidden.Name, text);
+        Assert.All(sender.SentMessages, m => { Assert.Equal(123, m.ChatId); Assert.True(m.Text.Length <= 4096); });
+        var button = Assert.Single(Assert.Single(sender.SentMenus).Buttons);
+        Assert.True(AppointmentBooking.Api.Telegram.CallbackDataParser.TryParse(button.CallbackData, out var parsed));
+        Assert.Equal("start", parsed!.Route);
+        Assert.Equal(state.Revision, parsed.Revision);
+        Assert.True(state.AllowsCallback("start"));
+        Assert.Equal("catalog", state.Step);
+    }
 }
