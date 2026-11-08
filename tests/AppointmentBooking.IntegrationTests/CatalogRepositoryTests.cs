@@ -12,6 +12,10 @@ public sealed class CatalogRepositoryTests(PostgresFixture fixture)
     public async Task BrowseUsesEmployeeTermsAndHidesDeactivatedRecords()
     {
         await using var db = fixture.CreateContext();
+
+        // Automatically rolls back when the test ends, including on failure.
+        await using var transaction = await db.Database.BeginTransactionAsync();
+
         var repo = new CatalogRepository(db);
         var first = new User(4300000001, "First", null, DateTime.UtcNow);
         var second = new User(4300000002, "Second", null, DateTime.UtcNow);
