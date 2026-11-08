@@ -137,4 +137,34 @@ public sealed class CatalogServiceTests(PostgresFixture fixture)
         Assert.True(state.AllowsCallback("start"));
         Assert.Equal("catalog", state.Step);
     }
+    [Theory]
+    [InlineData(0)]
+    [InlineData(21)]
+    public async Task TelegramCatalogueHandlesEmptyAndLongLists(int count)
+    {
+        await using var db = fixture.CreateContext();
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        // Isolate this screen's catalogue; the transaction rolls back all test changes.
+        await db.Services.ExecuteUpdateAsync(setters => setters.SetProperty(s => s.IsActive, false));
+        var names = Enumerable.Range(0, count).Select(i => i.ToString("D3") + new string('x', 197)).ToArray();
+        db.Services.AddRange(names.Select(name => new Service(name)));
+        await db.SaveChangesAsync();
+        var sender = new FakeTelegramClient();
+        var clock = new CatalogClock();
+        var state = new AppointmentBooking.Api.Telegram.State.ConversationState(clock.UtcNow);
+        var handler = new AppointmentBooking.Api.Telegram.Handlers.CatalogHandler(
+            new CatalogService(new CatalogRepository(db), new OwnerAccess(true), db), sender, clock);
+        var context = new AppointmentBooking.Api.Telegram.TelegramHandlerContext(
+            new(new Actor(Guid.NewGuid()), 42, "Client"), 123, "/catalog", null, state);
+        await handler.HandleAsync(context, default);
+        Assert.Equal(count == 0 ? 1 : 4, sender.SentMessages.Count);
+        var lines = sender.SentMessages.SelectMany(m => m.Text.Split('\n'))
+            .Where(line => line.StartsWith("• ")).Select(line => line[2..]).ToArray();
+        Assert.Equal(names, lines);
+        Assert.All(sender.SentMessages, m => Assert.InRange(m.Text.Length, 1, 4096));
+        var menu = Assert.Single(sender.SentMenus);
+        Assert.Single(menu.Buttons);
+        if (count == 0) Assert.Equal("No services are available yet.", menu.Text);
+        Assert.True(state.AllowsCallback("start"));
+    }
 }
