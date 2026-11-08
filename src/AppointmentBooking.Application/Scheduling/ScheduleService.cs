@@ -13,6 +13,7 @@ public sealed class ScheduleService(
 {
     public async Task SetHoursAsync(Actor actor, Guid staffId, WorkingHoursModel proposed, CancellationToken ct)
     {
+        await RejectEmptyStaffIdAsync(actor, staffId, ct);
         await using var transaction = await unitOfWork.BeginTransactionAsync(ct);
         await staffLock.AcquireAsync(staffId, ct);
         // Authorize only after waiting: a pre-lock tracked staff read can be stale.
@@ -59,6 +60,7 @@ public sealed class ScheduleService(
 
     public async Task<DayOffDto> AddDayOffAsync(Actor actor, Guid staffId, DayOffModel proposed, CancellationToken ct)
     {
+        await RejectEmptyStaffIdAsync(actor, staffId, ct);
         await using var transaction = await unitOfWork.BeginTransactionAsync(ct);
         await staffLock.AcquireAsync(staffId, ct);
         // Authorize only after waiting: a pre-lock tracked staff read can be stale.
@@ -104,6 +106,7 @@ public sealed class ScheduleService(
 
     public async Task RemoveDayOffAsync(Actor actor, Guid staffId, Guid dayOffId, CancellationToken ct)
     {
+        await RejectEmptyStaffIdAsync(actor, staffId, ct);
         await using var transaction = await unitOfWork.BeginTransactionAsync(ct);
         await staffLock.AcquireAsync(staffId, ct);
         // Authorize only after waiting: a pre-lock tracked staff read can be stale.
@@ -113,5 +116,15 @@ public sealed class ScheduleService(
         schedules.Remove(day);
         await unitOfWork.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
+    }
+
+    private async Task RejectEmptyStaffIdAsync(Actor actor, Guid staffId, CancellationToken ct)
+    {
+        if (staffId != Guid.Empty)
+            return;
+
+        // Preserve the access contract's caller-identity check before reporting a missing profile.
+        await access.RequireStaffManagementAsync(actor, staffId, ct);
+        throw new AppException(ErrorCodes.StaffNotFound, "Staff member not found.", AppErrorKind.NotFound);
     }
 }

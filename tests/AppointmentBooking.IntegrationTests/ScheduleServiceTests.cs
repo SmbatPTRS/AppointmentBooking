@@ -24,6 +24,30 @@ public sealed class ScheduleServiceTests(PostgresFixture fixture)
         public DateTime UtcNow => new(2026, 11, 8, 0, 0, 0, DateTimeKind.Utc);
     }
 
+    [Fact]
+    public async Task ScheduleWritesReportStaffNotFoundForAnEmptyStaffId()
+    {
+        await using var db = fixture.CreateContext();
+        var sut = new ScheduleService(new Access(false), new ScheduleRepository(db),
+            new BookingRepository(db), new BusinessSettingsRepository(db), db,
+            new PostgresStaffOperationLock(db), new Clock(), new ScheduleChangeValidator());
+        var actor = new Actor(Guid.NewGuid());
+
+        Func<Task>[] writes =
+        [
+            () => sut.SetHoursAsync(actor, Guid.Empty, new WorkingHoursModel(new(9, 0), new(18, 0)), default),
+            () => sut.AddDayOffAsync(actor, Guid.Empty, new DayOffModel(DayOfWeek.Monday), default),
+            () => sut.RemoveDayOffAsync(actor, Guid.Empty, Guid.NewGuid(), default)
+        ];
+
+        foreach (var write in writes)
+        {
+            var error = await Assert.ThrowsAsync<AppException>(write);
+            Assert.Equal(ErrorCodes.StaffNotFound, error.Code);
+            Assert.Equal(AppErrorKind.NotFound, error.Kind);
+        }
+    }
+
     [Theory]
     [InlineData(false, false)]
     [InlineData(true, false)]
