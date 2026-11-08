@@ -182,4 +182,49 @@ public sealed class ScheduleServiceTests(PostgresFixture fixture)
         Assert.Empty(db.ChangeTracker.Entries());
         Assert.Null(db.Database.CurrentTransaction);
     }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReadHoursReturnsOnlyRequestedStaffScheduleOrNull(bool configured)
+    {
+        await using var db = fixture.CreateContext();
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var clock = new Clock();
+        var user = new User(Random.Shared.NextInt64(5000000000, 9000000000), "Read", null, clock.UtcNow);
+        var otherUser = new User(Random.Shared.NextInt64(5000000000, 9000000000), "Other", null, clock.UtcNow);
+        var staff = new StaffMember(user.Id, "Read");
+        var other = new StaffMember(otherUser.Id, "Other");
+        db.AddRange(user, otherUser, staff, other, new WorkingHours(other.Id, new(7, 0), new(20, 0)));
+        var expected = new WorkingHoursModel(new(9, 0), new(18, 0), new(12, 0), new(13, 0));
+        if (configured) db.Add(new WorkingHours(staff.Id, expected.OpensAt, expected.ClosesAt, expected.BreakStartsAt, expected.BreakEndsAt));
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        var sut = new ScheduleService(new Access(false), new ScheduleRepository(db),
+            new BookingRepository(db), new BusinessSettingsRepository(db), db,
+            new PostgresStaffOperationLock(db), clock, new ScheduleChangeValidator());
+        Assert.Equal(configured ? expected : null, await sut.GetHoursAsync(new Actor(user.Id), staff.Id, default));
+        Assert.Empty(db.ChangeTracker.Entries());
+    }
+
+    [Fact]
+    public async Task DeniedScheduleReadsAndRemovalPropagateAccessError()
+    {
+        await using var db = fixture.CreateContext();
+        var sut = new ScheduleService(new Access(true), new ScheduleRepository(db),
+            new BookingRepository(db), new BusinessSettingsRepository(db), db,
+            new PostgresStaffOperationLock(db), new Clock(), new ScheduleChangeValidator());
+        var actor = new Actor(Guid.NewGuid());
+        var staffId = Guid.NewGuid();
+        foreach (var operation in new Func<Task>[] {
+            () => sut.GetHoursAsync(actor, staffId, default),
+            () => sut.ListDaysOffAsync(actor, staffId, default),
+            () => sut.RemoveDayOffAsync(actor, staffId, Guid.NewGuid(), default) })
+        {
+            var error = await Assert.ThrowsAsync<AppException>(operation);
+            Assert.Equal(ErrorCodes.Forbidden, error.Code);
+            Assert.Equal(AppErrorKind.Forbidden, error.Kind);
+        }
+        Assert.Empty(db.ChangeTracker.Entries());
+        Assert.Null(db.Database.CurrentTransaction);
+    }
 }

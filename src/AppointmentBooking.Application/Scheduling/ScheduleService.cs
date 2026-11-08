@@ -11,6 +11,13 @@ public sealed class ScheduleService(
     IBusinessSettingsRepository settings, IUnitOfWork unitOfWork,
     IStaffOperationLock staffLock, IClock clock, ScheduleChangeValidator validator)
 {
+    /// <summary>Returns null when the authorized employee has no configured hours.</summary>
+    public async Task<WorkingHoursModel?> GetHoursAsync(Actor actor, Guid staffId, CancellationToken ct)
+    {
+        await access.RequireStaffManagementAsync(actor, staffId, ct);
+        return await schedules.GetHoursAsync(staffId, ct);
+    }
+
     public async Task SetHoursAsync(Actor actor, Guid staffId, WorkingHoursModel proposed, CancellationToken ct)
     {
         await access.RequireStaffManagementAsync(actor, staffId, ct);

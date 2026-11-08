@@ -15,7 +15,7 @@ Tasks 10–12 and end-to-end acceptance are not complete.
 - AvailabilityCalculator shares interval rules with schedule validation.
   AvailabilityService loads PostgreSQL inputs and uses IClock. C must call current
   availability inside the booking transaction/employee lock for final validation.
-- ScheduleService exposes SetHoursAsync, ListDaysOffAsync, AddDayOffAsync and
+- ScheduleService exposes GetHoursAsync, SetHoursAsync, ListDaysOffAsync, AddDayOffAsync and
   RemoveDayOffAsync with Actor, staff ID and CancellationToken. DayOffDto carries
   the ID needed for scoped deletion; repository entities are not returned.
 - ScheduleService calls IAccessService.RequireStaffManagementAsync. Every mutation
@@ -30,7 +30,7 @@ Tasks 10–12 and end-to-end acceptance are not complete.
 ## Verification and limits
 
 `dotnet test AppointmentBooking.sln -c Release --nologo`:
-134 unit tests and 28 PostgreSQL integration cases passed on 2026-11-08.
+134 unit tests and 31 PostgreSQL integration cases passed on 2026-11-08.
 
 Schedule tests cover persistence, duplicate constraints, scoped repository lookup,
 input errors, denied hours/day-off additions, future booking conflicts and removal.
@@ -46,10 +46,12 @@ allow-all authorization implementation is supplied.
 
 ## Remaining work
 
-- Complete authorized schedule reads (GetHoursAsync), service wiring and transport
-  adapters after A's production access implementation is available.
+- Complete service wiring and transport adapters after A's production access
+  implementation is available. GetHoursAsync now returns an authorized read-only
+  model, or null when hours have not been configured.
 - Broaden service tests for first-time hours creation, cancellation/commit failures,
-  foreign day-off deletion, denied listing/removal and boundary cases.
+  foreign day-off deletion and boundary cases. Denied reads/removal and isolated
+  hours reads are covered with an access-service double.
 - Implement CatalogService against the agreed permission and locking contracts.
   Coordinate shared-service/offering lock ordering with A/C before mutations.
 - Integrate Task 10 controllers and Task 11 feature handlers with trusted identity
