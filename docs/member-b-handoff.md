@@ -30,7 +30,7 @@ Tasks 10–12 and end-to-end acceptance are not complete.
 ## Verification and limits
 
 `dotnet test AppointmentBooking.sln -c Release --nologo`:
-134 unit tests and 33 PostgreSQL integration cases passed on 2026-11-08.
+134 unit tests and 35 PostgreSQL integration cases passed on 2026-11-08.
 
 Schedule tests cover persistence, duplicate constraints, scoped repository lookup,
 input errors, denied hours/day-off additions, future booking conflicts and removal.
@@ -49,7 +49,9 @@ allow-all authorization implementation is supplied.
 - Complete service wiring and transport adapters after A's production access
   implementation is available. GetHoursAsync now returns an authorized read-only
   model, or null when hours have not been configured.
-- Broaden service tests for cancellation/commit failures and boundary cases.
+- Broaden service tests for commit failures and boundary cases. Cancellation while
+  waiting for the PostgreSQL employee lock is covered for hours edits and day-off
+  additions, including transaction disposal and unchanged stored schedules.
   First-time hours creation, updating the same row, foreign day-off deletion,
   denied reads/removal and isolated hours reads are covered with an access-service
   double. These tests do not verify the production authorization implementation.

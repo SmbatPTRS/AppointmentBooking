@@ -285,4 +285,46 @@ public sealed class ScheduleServiceTests(PostgresFixture fixture)
         Assert.False(await observer.StaffDaysOff.AnyAsync(d => d.Id == ownDay.Id));
         Assert.True(await observer.StaffDaysOff.AnyAsync(d => d.Id == foreignDay.Id));
     }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CancellationWhileWaitingForLockRollsBackWithoutScheduleChanges(bool dayOff)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
+        var ct = timeout.Token;
+        await using var writer = fixture.CreateContext();
+        var clock = new Clock();
+        var user = new User(Random.Shared.NextInt64(5000000000, 9000000000), "Cancel", null, clock.UtcNow);
+        var staff = new StaffMember(user.Id, "Cancel");
+        writer.AddRange(user, staff, new WorkingHours(staff.Id, new(9, 0), new(18, 0)));
+        await writer.SaveChangesAsync(ct);
+        await using var transaction = await writer.BeginTransactionAsync(ct);
+        await new PostgresStaffOperationLock(writer).AcquireAsync(staff.Id, ct);
+        await using var editor = fixture.CreateContext();
+        var observed = new ObservedLock(new PostgresStaffOperationLock(editor));
+        var sut = new ScheduleService(new Access(false), new ScheduleRepository(editor),
+            new BookingRepository(editor), new BusinessSettingsRepository(editor), editor,
+            observed, clock, new ScheduleChangeValidator());
+        Task edit = dayOff
+            ? sut.AddDayOffAsync(new Actor(user.Id), staff.Id, new DayOffModel(DayOfWeek.Monday), cancellation.Token)
+            : sut.SetHoursAsync(new Actor(user.Id), staff.Id, new WorkingHoursModel(new(10, 0), new(17, 0)), cancellation.Token);
+        await observed.Entered.Task.WaitAsync(ct);
+        while (!await writer.Database.SqlQueryRaw<bool>(
+            "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND NOT granted) AS \"Value\"")
+            .SingleAsync(ct))
+        {
+            if (edit.IsCompleted) throw new InvalidOperationException("Schedule edit did not wait for the employee lock.");
+            await Task.Delay(10, ct);
+        }
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => edit.WaitAsync(ct));
+        Assert.False(timeout.IsCancellationRequested);
+        Assert.Null(editor.Database.CurrentTransaction);
+        await using var observer = fixture.CreateContext();
+        var hours = await observer.WorkingHours.SingleAsync(h => h.StaffMemberId == staff.Id, ct);
+        Assert.Equal(new TimeOnly(9, 0), hours.OpensAt);
+        Assert.Equal(new TimeOnly(18, 0), hours.ClosesAt);
+        Assert.False(await observer.StaffDaysOff.AnyAsync(d => d.StaffMemberId == staff.Id, ct));
+    }
 }
