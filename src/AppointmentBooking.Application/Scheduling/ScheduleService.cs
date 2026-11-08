@@ -49,4 +49,66 @@ public sealed class ScheduleService(
         await unitOfWork.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
     }
+    public async Task<IReadOnlyList<DayOffDto>> ListDaysOffAsync(Actor actor, Guid staffId, CancellationToken ct)
+    {
+        await access.RequireStaffManagementAsync(actor, staffId, ct);
+        return (await schedules.ListDaysOffAsync(staffId, ct))
+            .Select(d => new DayOffDto(d.Id, d.Weekday, d.Date)).ToArray();
+    }
+
+    public async Task<DayOffDto> AddDayOffAsync(Actor actor, Guid staffId, DayOffModel proposed, CancellationToken ct)
+    {
+        await access.RequireStaffManagementAsync(actor, staffId, ct);
+        try { ScheduleRules.Validate(proposed); }
+        catch (ArgumentException ex)
+        {
+            throw new AppException(ErrorCodes.InvalidDayOff, ex.Message, AppErrorKind.Validation);
+        }
+        await using var transaction = await unitOfWork.BeginTransactionAsync(ct);
+        await staffLock.AcquireAsync(staffId, ct);
+        var existing = await schedules.ListDaysOffAsync(staffId, ct);
+        if (existing.Any(d => d.Weekday == proposed.Weekday && d.Date == proposed.Date))
+            throw new AppException(ErrorCodes.DuplicateDayOff, "This day off already exists.", AppErrorKind.Conflict);
+        var future = await bookings.GetFutureConfirmedAsync(staffId, clock.UtcNow, ct);
+        if (future.Count != 0)
+        {
+            var business = await settings.GetAsync(ct)
+                ?? throw new AppException(ErrorCodes.BusinessSettingsNotFound, "Missing business settings.", AppErrorKind.NotFound);
+            TimeZoneInfo zone;
+            try { zone = TimeZoneInfo.FindSystemTimeZoneById(business.TimeZoneId); }
+            catch (Exception ex) when (ex is TimeZoneNotFoundException or InvalidTimeZoneException)
+            {
+                throw new AppException(ErrorCodes.InvalidTimeZone, "Invalid business timezone.", AppErrorKind.Validation);
+            }
+            foreach (var booking in future)
+            {
+                var start = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(booking.StartsAtUtc, zone));
+                var end = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(booking.EndsAtUtc.AddTicks(-1), zone));
+                for (var date = start; ; date = date.AddDays(1))
+                {
+                    if (proposed.Date == date || proposed.Weekday == date.DayOfWeek)
+                        throw new AppException(ErrorCodes.ScheduleConflictsWithBookings,
+                            "The day off conflicts with a future confirmed booking.", AppErrorKind.Conflict);
+                    if (date >= end) break;
+                }
+            }
+        }
+        var day = new StaffDayOff(staffId, proposed.Weekday, proposed.Date);
+        schedules.Add(day);
+        await unitOfWork.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return new DayOffDto(day.Id, day.Weekday, day.Date);
+    }
+
+    public async Task RemoveDayOffAsync(Actor actor, Guid staffId, Guid dayOffId, CancellationToken ct)
+    {
+        await access.RequireStaffManagementAsync(actor, staffId, ct);
+        await using var transaction = await unitOfWork.BeginTransactionAsync(ct);
+        await staffLock.AcquireAsync(staffId, ct);
+        var day = await schedules.GetDayOffAsync(staffId, dayOffId, ct)
+            ?? throw new AppException(ErrorCodes.DayOffNotFound, "Day off not found.", AppErrorKind.NotFound);
+        schedules.Remove(day);
+        await unitOfWork.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+    }
 }
