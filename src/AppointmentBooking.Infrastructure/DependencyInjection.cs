@@ -1,5 +1,6 @@
 using AppointmentBooking.Application.Abstractions;
 using AppointmentBooking.Application.Common;
+using AppointmentBooking.Application.Identity;
 using AppointmentBooking.Infrastructure.Persistence;
 using AppointmentBooking.Infrastructure.Repositories;
 using AppointmentBooking.Infrastructure.Time;
@@ -29,6 +30,7 @@ public static class DependencyInjection
         services.AddScoped<IScheduleRepository, ScheduleRepository>();
         services.AddScoped<ICatalogRepository, CatalogRepository>();
         services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<UserService>();
         services.AddScoped<IBookingRepository, BookingRepository>();
 
         services.AddScoped<IStaffOperationLock, PostgresStaffOperationLock>();
