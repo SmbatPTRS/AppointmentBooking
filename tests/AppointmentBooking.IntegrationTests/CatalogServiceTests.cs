@@ -1,3 +1,4 @@
+using AppointmentBooking.Domain.Entities;
 using AppointmentBooking.Application.Abstractions;
 using AppointmentBooking.Application.Catalog;
 using AppointmentBooking.Application.Common;
@@ -54,5 +55,55 @@ public sealed class CatalogServiceTests(PostgresFixture fixture)
         Assert.Equal(denied ? AppErrorKind.Forbidden : AppErrorKind.Validation, error.Kind);
         Assert.Empty(db.ChangeTracker.Entries());
         Assert.Equal(before, await db.Services.CountAsync());
+    }
+    [Fact]
+    public async Task CustomerServiceListExcludesInactiveServices()
+    {
+        await using var db = fixture.CreateContext();
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var active = new Service("Visible service");
+        var hidden = new Service("Hidden service");
+        hidden.Deactivate();
+        db.AddRange(active, hidden);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        // Customer reads must not require owner privileges.
+        var sut = new CatalogService(new CatalogRepository(db), new OwnerAccess(true), db);
+        var result = await sut.ListActiveServicesAsync(default);
+        Assert.Contains(new ServiceDto(active.Id, active.Name, true), result);
+        Assert.DoesNotContain(result, s => s.Id == hidden.Id);
+        Assert.All(result, s => Assert.True(s.IsActive));
+        Assert.Empty(db.ChangeTracker.Entries());
+    }
+
+    [Theory]
+    [InlineData(true, true, true)]
+    [InlineData(false, true, true)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, false)]
+    public async Task CustomerOfferingsRequireActiveStaffServiceAndOffering(bool staffActive, bool serviceActive, bool offeringActive)
+    {
+        await using var db = fixture.CreateContext();
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var user = new User(Random.Shared.NextInt64(5000000000, 9000000000), "Catalogue", null, DateTime.UtcNow);
+        var otherUser = new User(Random.Shared.NextInt64(5000000000, 9000000000), "Other", null, DateTime.UtcNow);
+        var staff = new StaffMember(user.Id, "Catalogue");
+        var other = new StaffMember(otherUser.Id, "Other");
+        var service = new Service("Haircut");
+        var offering = new StaffService(staff.Id, service.Id, 5000.25m, 40);
+        var otherOffering = new StaffService(other.Id, service.Id, 7000m, 60);
+        if (!staffActive) staff.Deactivate();
+        if (!serviceActive) service.Deactivate();
+        if (!offeringActive) offering.Deactivate();
+        db.AddRange(user, otherUser, staff, other, service, offering, otherOffering);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        var sut = new CatalogService(new CatalogRepository(db), new OwnerAccess(true), db);
+        var result = await sut.ListActiveOfferingsAsync(staff.Id, default);
+        if (staffActive && serviceActive && offeringActive)
+            Assert.Equal(new StaffServiceDto(offering.Id, staff.Id, service.Id, "Haircut", 5000.25m, 40, true), Assert.Single(result));
+        else Assert.Empty(result);
+        Assert.Empty(await sut.ListActiveOfferingsAsync(Guid.NewGuid(), default));
+        Assert.Empty(db.ChangeTracker.Entries());
     }
 }
