@@ -15,6 +15,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<WorkingHours> WorkingHours => Set<WorkingHours>();
     public DbSet<StaffDayOff> StaffDaysOff => Set<StaffDayOff>();
     public DbSet<Booking> Bookings => Set<Booking>();
+    public DbSet<BookingCoordination> BookingCoordinationRows => Set<BookingCoordination>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
