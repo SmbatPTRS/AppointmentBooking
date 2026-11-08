@@ -1,53 +1,33 @@
 using AppointmentBooking.Application.Abstractions;
 using AppointmentBooking.Application.Common;
 using AppointmentBooking.Domain.Entities;
-using AppointmentBooking.Domain.Enums;
+using AppointmentBooking.Application.Availability;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace AppointmentBooking.Application.Bookings;
-
-// =============================================================================
-// ASSUMED CONTRACTS - compare with the real repo and rename to match.
-//
-//   IBookingRepository     : GetByClientRequestIdAsync(clientUserId, requestId, ct), Add(booking)
-//   ICatalogRepository     : GetOfferingAsync(staffServiceId, ct) -> offering with StaffMember + Service
-//                            (a tracked/fresh read; must not return a stale cached copy)
-//   IBookingReader         : same lookup as above but on a FRESH scope/context (used only after a
-//                            unique-key conflict, because the old transaction is aborted)
-//   IUnitOfWork            : BeginTransactionAsync(ct) -> IAsyncDisposable with CommitAsync(ct),
-//                            SaveChangesAsync(ct). SaveChangesAsync translates PostgreSQL errors:
-//                              23505 on (ClientUserId, RequestId) -> DbConflictException(UniqueRequestId)
-//                              23P01 exclusion (overlap)          -> DbConflictException(Overlap)
-//   IStaffOperationLock    : AcquireAsync(staffMemberId, ct) - transaction-scoped advisory lock,
-//                            on the SAME connection as the transaction
-//   IAvailabilityService   : ValidateIntervalAsync(staffServiceId, startUtc, ct) (B, Task 09)
-//   IClock                 : UtcNow
-//   AppException(code)     : A's exception; ErrorCodes.* from A
-//   Booking entity (A)     : needs RequestId and DurationMinutes (ask A to add them)
-// =============================================================================
-
 
 public sealed class BookingService
 {
 
     private readonly IBookingRepository _bookings;
-    private readonly IBookingReader _freshReader;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly ICatalogRepository _catalog;
     private readonly IUnitOfWork _uow;
     private readonly IStaffOperationLock _lock;
-    private readonly IAvailabilityService _availability;
+    private readonly AvailabilityService _availability;
     private readonly IClock _clock;
 
     public BookingService(
         IBookingRepository bookings,
-        IBookingReader freshReader,
+        IServiceScopeFactory scopeFactory,
         ICatalogRepository catalog,
         IUnitOfWork uow,
         IStaffOperationLock staffLock,
-        IAvailabilityService availability,
+        AvailabilityService availability,
         IClock clock)
     {
         _bookings = bookings;
-        _freshReader = freshReader;
+        _scopeFactory = scopeFactory;
         _catalog = catalog;
         _uow = uow;
         _lock = staffLock;
@@ -87,7 +67,9 @@ public sealed class BookingService
             // Another request with the same (ClientUserId, RequestId) committed first.
             // The transaction was already rolled back and disposed (we are outside its
             // "await using" scope), so read the winner through a FRESH scope/context.
-            var winner = await _freshReader.GetByClientRequestIdAsync(clientUserId, request.RequestId, ct)
+            await using var scope = _scopeFactory.CreateAsyncScope();
+            var repository = scope.ServiceProvider.GetRequiredService<IBookingRepository>();
+            var winner = await repository.GetByClientAndRequestIdAsync(clientUserId, request.RequestId, ct)
                          ?? throw new InvalidOperationException(
                              "Unique violation on RequestId but no row found.");
             return await ResolveExisting(winner, request, ct);
@@ -123,6 +105,10 @@ public sealed class BookingService
         await using var tx = await _uow.BeginTransactionAsync(ct);
         await _lock.AcquireAsync(preview.StaffMemberId, ct);
 
+        var existing = await _bookings.GetByClientAndRequestIdAsync(clientUserId, request.RequestId, ct);
+        if (existing is not null)
+            return await ResolveExisting(existing, request, ct);
+
         // 5. Re-read EVERYTHING inside the lock; the unlocked read may be stale.
         var offering = await _bookings.GetBookingOfferingAsync(request.StaffServiceId, ct)
                        ?? throw new AppException(ErrorCodes.StaffServiceNotFound, "StaffService not found.", AppErrorKind.NotFound);
@@ -138,7 +124,8 @@ public sealed class BookingService
         //    B's method also reads business settings (time zone) itself.
         if (request.StartAtUtc <= _clock.UtcNow)
             throw new AppException(ErrorCodes.TimeUnavailable, "Booking time must be in the future.", AppErrorKind.Conflict);
-        await _availability.ValidateIntervalAsync(request.StaffServiceId, request.StartAtUtc, ct);
+        if (!await _availability.IsAvailableAsync(offering.StaffMemberId, offering.Id, request.StartAtUtc, ct))
+            throw new AppException(ErrorCodes.TimeUnavailable, "The requested time is unavailable.", AppErrorKind.Conflict);
 
         // 8. Snapshot values come from the SERVER's offering, not from the request.
         var booking = new Booking(
@@ -161,7 +148,7 @@ public sealed class BookingService
         catch (DbConflictException ex) when (ex.Kind == ConflictKind.Overlap)
         {
             // Last line of defence behind the lock: the exclusion constraint fired.
-            throw new AppException(ErrorCodes.TimeUnavailable);
+            throw new AppException(ErrorCodes.TimeUnavailable, "The requested time is unavailable.", AppErrorKind.Conflict);
         }
         // ConflictKind.UniqueRequestId is NOT caught here: it leaves this method, the
         // transaction is rolled back by disposal, and CreateAsync recovers on a fresh scope.
