@@ -12,7 +12,8 @@ public static class TelegramServiceCollectionExtensions
     {
         services.AddSingleton<IValidateOptions<TelegramOptions>, TelegramOptionsValidator>();
         services.AddOptions<TelegramOptions>().BindConfiguration("Telegram").ValidateOnStart();
-        services.AddHttpClient("TelegramBot");
+        // The Bot API token is part of the URI path. Keep default HTTP loggers from recording it.
+        services.AddHttpClient("TelegramBot").RemoveAllLoggers();
         services.AddSingleton<ITelegramBotClient>(provider =>
         {
             var options = provider.GetRequiredService<IOptions<TelegramOptions>>().Value;
