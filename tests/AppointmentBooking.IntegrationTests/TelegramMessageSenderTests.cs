@@ -94,6 +94,34 @@ public sealed class TelegramMessageSenderTests
             sending.WaitAsync(TimeSpan.FromSeconds(5)));
     }
 
+    [Fact]
+    public async Task SendsMenuButtonsAndAcknowledgesCallbacksThroughLibrary()
+    {
+        var requests = new List<string>();
+        using var handler = new StubHttpHandler(async (request, ct) =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            requests.Add(path);
+            using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
+            if (path.EndsWith("/sendMessage", StringComparison.Ordinal))
+            {
+                var button = body.RootElement.GetProperty("reply_markup").GetProperty("inline_keyboard")[0][0];
+                Assert.Equal("Book", button.GetProperty("text").GetString());
+                Assert.Equal("button-data", button.GetProperty("callback_data").GetString());
+                return JsonResponse(HttpStatusCode.OK,
+                    "{\"ok\":true,\"result\":{\"message_id\":1,\"date\":0,\"chat\":{\"id\":123,\"type\":\"private\"}}}");
+            }
+            Assert.EndsWith("/answerCallbackQuery", path);
+            Assert.Equal("callback-id", body.RootElement.GetProperty("callback_query_id").GetString());
+            Assert.Equal("Old button", body.RootElement.GetProperty("text").GetString());
+            return JsonResponse(HttpStatusCode.OK, "{\"ok\":true,\"result\":true}");
+        });
+        using var http = new HttpClient(handler);
+        var sender = new TelegramMessageSender(new TelegramBotClient(TestToken, http));
+        await sender.SendMenuAsync(123, "Menu", [new TelegramMenuButton("Book", "button-data")]);
+        await sender.AnswerCallbackAsync("callback-id", "Old button");
+        Assert.Equal(2, requests.Count);
+    }
     private static HttpResponseMessage JsonResponse(HttpStatusCode status, string json) => new(status)
     {
         Content = new StringContent(json, Encoding.UTF8, "application/json")

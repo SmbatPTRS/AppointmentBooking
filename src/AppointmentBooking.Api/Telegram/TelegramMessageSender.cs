@@ -1,18 +1,32 @@
 using Telegram.Bot;
+using Telegram.Bot.Types.ReplyMarkups;
 
 namespace AppointmentBooking.Api.Telegram;
 
-/// <summary>Sends plain-text replies through the Telegram Bot API client.</summary>
+/// <summary>Sends plain-text replies; delivery errors propagate for transport-level retry.</summary>
 public sealed class TelegramMessageSender(ITelegramBotClient client) : ITelegramMessageSender
 {
-    public async Task SendTextAsync(
-        long chatId,
-        string text,
+    public async Task SendTextAsync(long chatId, string text, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await client.SendMessage(chatId, text, cancellationToken: cancellationToken);
+    }
+
+    public async Task SendMenuAsync(long chatId, string text, IReadOnlyList<TelegramMenuButton> buttons,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        // Leave parse mode unset so user-supplied text is not interpreted as HTML/Markdown.
-        // Sending failures must propagate; a failed reply is not a successful delivery.
-        await client.SendMessage(chatId, text, cancellationToken: cancellationToken);
+        var keyboard = new InlineKeyboardMarkup(buttons.Select(button => new[]
+        {
+            InlineKeyboardButton.WithCallbackData(button.Text, button.CallbackData)
+        }));
+        await client.SendMessage(chatId, text, replyMarkup: keyboard, cancellationToken: cancellationToken);
+    }
+
+    public async Task AnswerCallbackAsync(string callbackQueryId, string? text = null,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await client.AnswerCallbackQuery(callbackQueryId, text: text, cancellationToken: cancellationToken);
     }
 }
