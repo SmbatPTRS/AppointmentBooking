@@ -95,4 +95,91 @@ public sealed class ScheduleServiceTests(PostgresFixture fixture)
         var missing = await Assert.ThrowsAsync<AppException>(() => sut.RemoveDayOffAsync(actor, staff.Id, added.Id, default));
         Assert.Equal(ErrorCodes.DayOffNotFound, missing.Code);
     }
+    private sealed class ObservedLock(IStaffOperationLock inner) : IStaffOperationLock
+    {
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public async Task AcquireAsync(Guid staffId, CancellationToken ct)
+        {
+            var acquisition = inner.AcquireAsync(staffId, ct);
+            Entered.TrySetResult();
+            await acquisition;
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MutationObservesBookingCommittedWhileWaitingForEmployeeLock(bool dayOff)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var ct = timeout.Token;
+        await using var writer = fixture.CreateContext();
+        var clock = new Clock();
+        var user = new User(Random.Shared.NextInt64(5000000000, 9000000000), "Race", null, clock.UtcNow);
+        var staff = new StaffMember(user.Id, "Race");
+        var service = new Service("Race");
+        var offering = new StaffService(staff.Id, service.Id, 100m, 30);
+        var settings = await writer.BusinessSettings.SingleOrDefaultAsync(ct);
+        if (settings is null) writer.BusinessSettings.Add(new BusinessSettings("Studio", "Staff", "UTC", "AMD"));
+        var zone = TimeZoneInfo.FindSystemTimeZoneById(settings?.TimeZoneId ?? "UTC");
+        var start = TimeZoneInfo.ConvertTimeToUtc(new DateTime(2027, 2, 1, 16, 0, 0), zone);
+        writer.AddRange(user, staff, service, offering, new WorkingHours(staff.Id, new(9, 0), new(18, 0)));
+        await writer.SaveChangesAsync(ct);
+        await using var transaction = await writer.BeginTransactionAsync(ct);
+        await new PostgresStaffOperationLock(writer).AcquireAsync(staff.Id, ct);
+
+        await using var editor = fixture.CreateContext();
+        var observed = new ObservedLock(new PostgresStaffOperationLock(editor));
+        var sut = new ScheduleService(new Access(false), new ScheduleRepository(editor),
+            new BookingRepository(editor), new BusinessSettingsRepository(editor), editor,
+            observed, clock, new ScheduleChangeValidator());
+        Task edit = dayOff
+            ? sut.AddDayOffAsync(new Actor(user.Id), staff.Id, new DayOffModel(Date: new(2027, 2, 1)), ct)
+            : sut.SetHoursAsync(new Actor(user.Id), staff.Id, new WorkingHoursModel(new(9, 0), new(16, 0)), ct);
+        await observed.Entered.Task.WaitAsync(ct);
+        // Observe PostgreSQL itself waiting: no timing-based sleep assertion.
+        while (!await writer.Database.SqlQueryRaw<bool>(
+            "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND NOT granted) AS \"Value\"")
+            .SingleAsync(ct))
+        {
+            if (edit.IsCompleted) throw new InvalidOperationException("Schedule edit did not wait for the employee lock.");
+            await Task.Delay(10, ct);
+        }
+        writer.Bookings.Add(new Booking(user.Id, staff.Id, offering.Id, Guid.NewGuid(), start, 100m, 30, clock.UtcNow));
+        await writer.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        var error = await Assert.ThrowsAsync<AppException>(() => edit);
+        Assert.Equal(ErrorCodes.ScheduleConflictsWithBookings, error.Code);
+        await using var verification = fixture.CreateContext();
+        Assert.Equal(new TimeOnly(18, 0), (await verification.WorkingHours.SingleAsync(h => h.StaffMemberId == staff.Id, ct)).ClosesAt);
+        Assert.False(await verification.StaffDaysOff.AnyAsync(d => d.StaffMemberId == staff.Id, ct));
+    }
+
+    [Fact]
+    public async Task InvalidInputReturnsApplicationErrorsWithoutSaving()
+    {
+        await using var db = fixture.CreateContext();
+        var sut = new ScheduleService(new Access(false), new ScheduleRepository(db),
+            new BookingRepository(db), new BusinessSettingsRepository(db), db,
+            new PostgresStaffOperationLock(db), new Clock(), new ScheduleChangeValidator());
+        var actor = new Actor(Guid.NewGuid());
+        var staffId = Guid.NewGuid();
+        foreach (var hours in new[] { new WorkingHoursModel(new(18, 0), new(9, 0)),
+            new WorkingHoursModel(new(9, 0), new(18, 0), new(12, 0)),
+            new WorkingHoursModel(new(9, 0), new(18, 0), new(8, 0), new(10, 0)) })
+        {
+            var error = await Assert.ThrowsAsync<AppException>(() => sut.SetHoursAsync(actor, staffId, hours, default));
+            Assert.Equal(ErrorCodes.InvalidWorkingHours, error.Code);
+            Assert.Equal(AppErrorKind.Validation, error.Kind);
+        }
+        foreach (var day in new[] { new DayOffModel(), new DayOffModel((DayOfWeek)7),
+            new DayOffModel(DayOfWeek.Monday, new(2027, 2, 1)) })
+        {
+            var error = await Assert.ThrowsAsync<AppException>(() => sut.AddDayOffAsync(actor, staffId, day, default));
+            Assert.Equal(ErrorCodes.InvalidDayOff, error.Code);
+            Assert.Equal(AppErrorKind.Validation, error.Kind);
+        }
+        Assert.Empty(db.ChangeTracker.Entries());
+        Assert.Null(db.Database.CurrentTransaction);
+    }
 }
