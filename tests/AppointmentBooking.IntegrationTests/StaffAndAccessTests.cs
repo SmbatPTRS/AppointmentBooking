@@ -98,6 +98,23 @@ public sealed class StaffAndAccessTests
         var protectedGet = swagger.Paths["/test/api-key/{target}"].Operations[OperationType.Get];
         var requiredScheme = Assert.Single(Assert.Single(protectedGet.Security).Keys);
         Assert.Equal(ApiKeyAuthenticationHandler.SchemeName, requiredScheme.Reference.Id);
+        var task04Operations = new (string Path, OperationType Method)[]
+        {
+            ("/api/business-settings", OperationType.Get),
+            ("/api/business-settings", OperationType.Put),
+            ("/api/business-settings/time-zone-and-currency", OperationType.Put),
+            ("/api/staff", OperationType.Get),
+            ("/api/staff", OperationType.Post),
+            ("/api/staff/{staffId}", OperationType.Patch),
+            ("/api/staff/{staffId}/activation", OperationType.Put)
+        };
+        foreach (var (path, method) in task04Operations)
+        {
+            var operation = swagger.Paths[path].Operations[method];
+            var operationScheme = Assert.Single(Assert.Single(operation.Security).Keys);
+            Assert.Equal(ApiKeyAuthenticationHandler.SchemeName, operationScheme.Reference.Id);
+        }
+
         Assert.Empty(swagger.Paths["/health"].Operations[OperationType.Get].Security);
     }
 
