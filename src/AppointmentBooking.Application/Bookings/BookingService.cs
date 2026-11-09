@@ -103,12 +103,11 @@ public sealed class BookingService
         Guid clientUserId, CreateBookingRequest request, CancellationToken ct)
     {
         
-        if (request.ExpectedCoordinationVersions is null)
-            throw new AppException(ErrorCodes.ValidationFailed, "ExpectedCoordinationVersions is required.", AppErrorKind.Validation);
-        
         // 3. Unlocked read, only to learn WHICH employee to lock.
         var preview = await _catalog.GetOfferingByIdAsync(request.StaffServiceId, ct)
                       ?? throw new AppException(ErrorCodes.StaffServiceNotFound, "StaffService not found.", AppErrorKind.NotFound);
+        
+        var expectedVersions = await _coordinationRepository.ReadVersionsAsync(preview.StaffMemberId, ct);
         
         // 4. Transaction + per-employee lock on the same connection.
         await using var tx = await _uow.BeginTransactionAsync(ct);
@@ -125,13 +124,6 @@ public sealed class BookingService
         if (!offering.IsActive || !offering.IsServiceActive || !offering.IsStaffMemberActive)
             throw new AppException(ErrorCodes.OfferingInactive, "StaffService or its StaffMember or Service is inactive.", AppErrorKind.Conflict);
         
-        var current = await _coordinationRepository.ReadVersionsAsync(offering.StaffMemberId, ct);
-        if (current != request.ExpectedCoordinationVersions)   // or compare each field if it returns several
-            throw new AppException(
-                ErrorCodes.ConfigurationChanged,
-                "Booking settings changed since you started. Please review and confirm again.",
-                AppErrorKind.Conflict);
-        
         
         // 6. The customer must have seen the price and duration that apply now.
         if (offering.Price != request.ExpectedPrice || offering.DurationMinutes != request.ExpectedDurationMinutes)
@@ -144,6 +136,14 @@ public sealed class BookingService
         if (!await _availability.IsAvailableAsync(offering.StaffMemberId, offering.Id, request.StartAtUtc, ct))
             throw new AppException(ErrorCodes.TimeUnavailable, "The requested time is unavailable.", AppErrorKind.Conflict);
 
+        var current = await _coordinationRepository.LockAndReadVersionsAsync(offering.StaffMemberId, ct);
+        if (current != expectedVersions)   // or compare each field if it returns several
+            throw new AppException(
+                ErrorCodes.ConfigurationChanged,
+                "Booking settings changed since you started. Please review and confirm again.",
+                AppErrorKind.Conflict);
+        
+        
         // 8. Snapshot values come from the SERVER's offering, not from the request.
         var booking = new Booking(
             clientUserId,
@@ -154,7 +154,8 @@ public sealed class BookingService
             offering.Price,
             offering.DurationMinutes,
             _clock.UtcNow);
-
+        
+        
         _bookings.Add(booking);
 
         try
