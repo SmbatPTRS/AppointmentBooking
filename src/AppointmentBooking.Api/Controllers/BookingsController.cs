@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace AppointmentBooking.Api.Controllers;
 
 [ApiController]
-[Authorize]
+[Authorize(Policy = ApiKeyAuthenticationHandler.SchemeName)]
 [Route("api/bookings")]
 public sealed class BookingsController : ControllerBase
 {
