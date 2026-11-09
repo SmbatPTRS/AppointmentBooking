@@ -1,3 +1,4 @@
+using AppointmentBooking.Api.Telegram;
 using AppointmentBooking.Application.Availability;
 using AppointmentBooking.Application.Bookings;
 using AppointmentBooking.Application.Abstractions;
@@ -18,6 +19,7 @@ if (builder.Environment.IsDevelopment() && File.Exists(envFile))
 }
 
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddTelegramInfrastructure();
 builder.Services.AddOptions<BookingOptions>().BindConfiguration("Booking").ValidateDataAnnotations().ValidateOnStart();
 builder.Services.AddScoped<IStaffRepository, StaffRepository>();
 builder.Services.AddScoped<IBusinessSettingsRepository, BusinessSettingsRepository>();
