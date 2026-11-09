@@ -29,6 +29,19 @@ public sealed class TelegramUpdateDispatcher
 
     public async Task<TelegramDispatchResult> DispatchAsync(Update update, CancellationToken ct = default)
     {
+        try
+        {
+            return await DispatchCoreAsync(update, ct);
+        }
+        catch (TelegramCallbackExpiredException) when (update.CallbackQuery is not null && !ct.IsCancellationRequested)
+        {
+            // The old click cannot be acknowledged again. Do not block fresh updates behind it.
+            return TelegramDispatchResult.Handled;
+        }
+    }
+
+    private async Task<TelegramDispatchResult> DispatchCoreAsync(Update update, CancellationToken ct)
+    {
         var callback = update.CallbackQuery;
         var telegramUser = callback?.From ?? update.Message?.From;
         var chat = callback?.Message?.Chat ?? update.Message?.Chat;

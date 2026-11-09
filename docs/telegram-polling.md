@@ -24,6 +24,14 @@ can extend that wait. Empty immediate replies get a short idle delay. Invalid cr
 or a conflicting receiver (401/409) stop the service so the operator can fix configuration.
 Logs deliberately omit raw request URLs, tokens, update payloads and raw exception text.
 
+One terminal acknowledgement error also counts as handled: answerCallbackQuery returning
+400 with Telegram's specific "query is too old and response timeout expired" description
+(including its "or query ID is invalid" variant). The sender identifies this error and the
+dispatcher abandons that click before running its feature handler. Polling then advances
+past it, allowing a fresh /start in the same batch to run. Other 400 responses, temporary
+failures and rate limits still propagate to the existing retry policy. Expiry-like text on
+another API method is not treated as an expired callback.
+
 Shutdown cancellation is passed through receiving, dispatch, database work and waits.
 The service stops receiving; an active operation is cancelled and its scope is disposed.
 One application instance only. Stop the old receiver before changing modes or starting a

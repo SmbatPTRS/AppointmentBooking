@@ -248,6 +248,77 @@ public sealed class TelegramTransportTests
         await test.Stop();
         Assert.True(interval >= TimeSpan.FromMilliseconds(1800));
     }
+    [Theory]
+    [InlineData(400, "Bad Request: query is too old and response timeout expired or query ID is invalid", false)]
+    [InlineData(400, "Bad Request: query is too old and response timeout expired", false)]
+    [InlineData(500, "Internal Server Error", true)]
+    [InlineData(400, "Bad Request: unrelated error", true)]
+    public async Task CallbackExpiryAllowsNextStartButOtherFailuresRetry(int code, string description, bool retry)
+    {
+        var finished = Signal();
+        var offsets = new List<int?>();
+        var acknowledgements = 0;
+        var starts = 0;
+        var actions = 0;
+        long failedAt = 0;
+        TimeSpan retryDelay = default;
+        string? callbackData = null;
+        await using var test = new Harness(async (request, ct) =>
+        {
+            if (Is(request, "deleteWebhook")) return Ok();
+            if (Is(request, "answerCallbackQuery"))
+            {
+                if (++acknowledgements == 1)
+                {
+                    failedAt = Stopwatch.GetTimestamp();
+                    return new HttpResponseMessage((HttpStatusCode)code)
+                    { Content = new StringContent(JsonSerializer.Serialize(new { ok = false, error_code = code, description }), Encoding.UTF8, "application/json") };
+                }
+                retryDelay = Stopwatch.GetElapsedTime(failedAt);
+                return Ok();
+            }
+            Assert.True(Is(request, "getUpdates"));
+            using var body = await Body(request, ct);
+            var offset = body.RootElement.TryGetProperty("offset", out var value) ? value.GetInt32() : (int?)null;
+            offsets.Add(offset);
+            if (offset == 93)
+            {
+                finished.SetResult();
+                return await WaitForShutdown(ct);
+            }
+            return Json(JsonSerializer.Serialize(new
+            {
+                ok = true,
+                result = new object[]
+                {
+                    new { update_id = 91, callback_query = new { id = "old-click", chat_instance = "test",
+                        @from = new { id = 42, is_bot = false, first_name = "Ada" }, data = callbackData,
+                        message = new { message_id = 1, date = 0, chat = new { id = 42, type = "private" } } } },
+                    new { update_id = 92, message = new { message_id = 2, date = 0, text = "/start",
+                        @from = new { id = 42, is_bot = false, first_name = "Ada" }, chat = new { id = 42, type = "private" } } }
+                }
+            }));
+        }, additionalHandlers: [new DelegateHandler("book", () => actions++), new DelegateHandler("start", () => starts++)],
+            useRealSender: true);
+        callbackData = await test.AllowCallback("book");
+        await test.Start();
+        await finished.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await test.Stop();
+
+        Assert.Equal(1, starts);
+        Assert.Equal(retry ? 1 : 0, actions);
+        Assert.Equal(retry ? 2 : 1, acknowledgements);
+        Assert.Equal(retry ? new int?[] { null, null, 93 } : new int?[] { null, 93 }, offsets);
+        if (retry) Assert.True(retryDelay >= TimeSpan.FromMilliseconds(800));
+    }
+
+    private sealed class DelegateHandler(string route, Action action) : ITelegramHandler
+    {
+        public string Route => route;
+        public Task HandleAsync(TelegramHandlerContext context, CancellationToken ct)
+        { action(); return Task.CompletedTask; }
+    }
+
     private static TaskCompletionSource Signal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
     private static int Id(TelegramHandlerContext context) => int.Parse(context.Text!.Split(' ')[1]);
     private static bool Is(HttpRequestMessage request, string method) => request.RequestUri!.AbsolutePath.EndsWith("/" + method, StringComparison.Ordinal);
@@ -279,13 +350,16 @@ public sealed class TelegramTransportTests
         public readonly ConcurrentQueue<Call> Calls = new();
         public readonly TelegramPollingService Polling;
         public Harness(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> respond,
-            Func<TelegramHandlerContext, CancellationToken, Task>? action = null)
+            Func<TelegramHandlerContext, CancellationToken, Task>? action = null,
+            ITelegramHandler[]? additionalHandlers = null, bool useRealSender = false)
         {
             http = new HttpClient(new HttpStub(respond));
             var services = new ServiceCollection();
             var options = Options.Create(new TelegramOptions { Enabled = true, Mode = "Polling", PollingRetryDelaySeconds = 1 });
-            services.AddSingleton<ITelegramBotClient>(new TelegramBotClient(new TelegramBotClientOptions(
-                "123456789:TEST_ONLY_NOT_A_REAL_BOT_TOKEN_12345") { RetryCount = 0 }, http));
+            var client = new TelegramBotClient(new TelegramBotClientOptions(
+                "123456789:TEST_ONLY_NOT_A_REAL_BOT_TOKEN_12345") { RetryCount = 0 }, http);
+            services.AddSingleton<ITelegramBotClient>(client);
+            ITelegramMessageSender sender = useRealSender ? new TelegramMessageSender(client) : Sender;
             services.AddDbContext<AppDbContext>(builder => builder.UseNpgsql("Host=localhost;Database=not_opened;Username=test;Password=test"));
             services.AddSingleton<IUserRepository>(Users);
             services.AddSingleton<IClock, Clock>();
@@ -294,11 +368,19 @@ public sealed class TelegramTransportTests
             services.AddScoped<TelegramActorResolver>();
             services.AddScoped<ProbeHandler>(p => new ProbeHandler(p.GetRequiredService<AppDbContext>(), Calls, action));
             services.AddScoped<TelegramUpdateDispatcher>(p => new TelegramUpdateDispatcher(
-                [p.GetRequiredService<ProbeHandler>()], p.GetRequiredService<TelegramActorResolver>(), Sender,
+                new ITelegramHandler[] { p.GetRequiredService<ProbeHandler>() }.Concat(additionalHandlers ?? []),
+                p.GetRequiredService<TelegramActorResolver>(), sender,
                 p.GetRequiredService<ConversationStateStore>(), options));
             provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
             Polling = new TelegramPollingService(provider, provider.GetRequiredService<IServiceScopeFactory>(), options,
                 NullLogger<TelegramPollingService>.Instance);
+        }
+        public async Task<string> AllowCallback(string route)
+        {
+            using var lease = await provider.GetRequiredService<ConversationStateStore>()
+                .AcquireAsync(new ConversationKey(42, 42), default);
+            lease.State.SetAllowedCallbacks([route]);
+            return $"1:{lease.State.Revision:N}:{route}";
         }
         public Task Start() => Polling.StartAsync(default);
         public async Task Stop()
