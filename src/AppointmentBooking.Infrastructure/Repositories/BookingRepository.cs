@@ -73,7 +73,7 @@ public sealed class BookingRepository(AppDbContext context) : IBookingRepository
     {
         context.Bookings.Add(booking);
     }
-    
+
     public async Task<BookingOffering?> GetBookingOfferingAsync(Guid staffServiceId, CancellationToken ct)
     {
         var query = from offering in context.StaffServices

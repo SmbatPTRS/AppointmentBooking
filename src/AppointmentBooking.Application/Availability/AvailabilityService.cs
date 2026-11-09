@@ -6,7 +6,7 @@ namespace AppointmentBooking.Application.Availability;
 public sealed class AvailabilityService(
     ICatalogRepository catalog, IStaffRepository staff, IScheduleRepository schedules,
     IBusinessSettingsRepository settings, IBookingRepository bookings, IClock clock,
-    AvailabilityCalculator calculator) 
+    AvailabilityCalculator calculator)
 {
     // For final confirmation, the caller must already hold the employee lock
     // in the booking transaction. This check alone does not reserve a slot.

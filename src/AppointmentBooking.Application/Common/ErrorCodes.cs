@@ -58,7 +58,7 @@ public static class ErrorCodes
     // Booking.
     public const string BookingNotFound =
         "booking.not_found";
-    
+
     public const string ConfigurationChanged =
         "booking.configuration_changed";
 
@@ -73,7 +73,7 @@ public static class ErrorCodes
 
     public const string OfferingChanged =
         "booking.offering_changed";
-    
+
     public const string OfferingInactive =
         "booking.offering_inactive";
 

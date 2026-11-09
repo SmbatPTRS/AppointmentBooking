@@ -102,13 +102,13 @@ public sealed class BookingService
     private async Task<BookingDto> CreateInsideTransactionAsync(
         Guid clientUserId, CreateBookingRequest request, CancellationToken ct)
     {
-        
+
         // 3. Unlocked read, only to learn WHICH employee to lock.
         var preview = await _catalog.GetOfferingByIdAsync(request.StaffServiceId, ct)
                       ?? throw new AppException(ErrorCodes.StaffServiceNotFound, "StaffService not found.", AppErrorKind.NotFound);
-        
+
         var expectedVersions = await _coordinationRepository.ReadVersionsAsync(preview.StaffMemberId, ct);
-        
+
         // 4. Transaction + per-employee lock on the same connection.
         await using var tx = await _uow.BeginTransactionAsync(ct);
         await _lock.AcquireAsync(preview.StaffMemberId, ct);
@@ -123,8 +123,8 @@ public sealed class BookingService
 
         if (!offering.IsActive || !offering.IsServiceActive || !offering.IsStaffMemberActive)
             throw new AppException(ErrorCodes.OfferingInactive, "StaffService or its StaffMember or Service is inactive.", AppErrorKind.Conflict);
-        
-        
+
+
         // 6. The customer must have seen the price and duration that apply now.
         if (offering.Price != request.ExpectedPrice || offering.DurationMinutes != request.ExpectedDurationMinutes)
             throw new AppException(ErrorCodes.OfferingChanged, "Price or duration has changed since the booking process started.", AppErrorKind.Conflict);
@@ -142,8 +142,8 @@ public sealed class BookingService
                 ErrorCodes.ConfigurationChanged,
                 "Booking settings changed since you started. Please review and confirm again.",
                 AppErrorKind.Conflict);
-        
-        
+
+
         // 8. Snapshot values come from the SERVER's offering, not from the request.
         var booking = new Booking(
             clientUserId,
@@ -154,8 +154,8 @@ public sealed class BookingService
             offering.Price,
             offering.DurationMinutes,
             _clock.UtcNow);
-        
-        
+
+
         _bookings.Add(booking);
 
         try

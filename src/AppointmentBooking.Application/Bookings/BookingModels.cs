@@ -10,7 +10,7 @@ public sealed record CreateBookingRequest(
     Guid StaffServiceId,
     DateTime StartAtUtc,
     // the expected price is the price that the client sees during the booking process. It is used to validate that the price has not changed since the client started the booking process.
-    decimal ExpectedPrice, 
+    decimal ExpectedPrice,
     int ExpectedDurationMinutes
     );
 
@@ -34,5 +34,3 @@ public sealed record BookingDto(
     DateTime EndAtUtc,
     BookingStatus Status
     );
-
-
