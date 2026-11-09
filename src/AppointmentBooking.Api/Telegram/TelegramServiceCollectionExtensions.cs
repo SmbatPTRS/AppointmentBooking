@@ -29,6 +29,7 @@ public static class TelegramServiceCollectionExtensions
         services.AddScoped<TelegramActorResolver>();
         services.AddScoped<TelegramUpdateDispatcher>();
         services.AddScoped<ITelegramHandler, StartHandler>();
+        services.AddHostedService<TelegramPollingService>();
         return services;
     }
 }
