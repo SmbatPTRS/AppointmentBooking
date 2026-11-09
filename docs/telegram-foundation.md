@@ -8,8 +8,7 @@ and callback acknowledgements. Chat IDs are destinations, not actor identities.
 
 Program calls AddTelegramInfrastructure. Options are validated at host startup when
 Telegram is enabled. The client and sender are reused; handlers/dispatcher/actor resolver
-are scoped. Disabled startup needs no token and makes no Telegram requests. No receiver
-starts in Task 19: Polling and Webhook are Tasks 20 and 21.
+are scoped. Disabled startup needs no token and makes no Telegram requests. Task 20 now adds the polling receiver; see [polling and shutdown](telegram-polling.md). Webhook reception remains Task 21.
 
 Configuration in private environment variables / API .env:
 
@@ -131,4 +130,4 @@ dotnet test tests/AppointmentBooking.IntegrationTests/AppointmentBooking.Integra
 ```
 
 This is a shared foundation, not implemented A/B/C feature screens or a running transport.
-A real Telegram smoke test needs configured credentials and the Task 20/21 receiver.
+Task 20 provides the polling receiver on this branch. A real Telegram smoke test still needs configured credentials and a ready database; see telegram-polling.md.

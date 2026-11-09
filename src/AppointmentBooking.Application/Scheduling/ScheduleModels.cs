@@ -8,3 +8,5 @@ public sealed record WorkingHoursModel(
 
 // DayOfWeek follows .NET: Sunday = 0, Saturday = 6.
 public sealed record DayOffModel(DayOfWeek? Weekday = null, DateOnly? Date = null);
+
+public sealed record DayOffDto(Guid Id, DayOfWeek? Weekday, DateOnly? Date);

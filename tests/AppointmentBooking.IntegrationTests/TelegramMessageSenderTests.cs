@@ -122,6 +122,34 @@ public sealed class TelegramMessageSenderTests
         await sender.AnswerCallbackAsync("callback-id", "Old button");
         Assert.Equal(2, requests.Count);
     }
+    [Theory]
+    [InlineData("Bad Request: query is too old and response timeout expired or query ID is invalid")]
+    [InlineData("Bad Request: query is too old and response timeout expired")]
+    public async Task OnlyCallbackAcknowledgementTranslatesExpiry(string description)
+    {
+        using var http = new HttpClient(new StubHttpHandler((_, _) => Task.FromResult(JsonResponse(
+            HttpStatusCode.BadRequest, JsonSerializer.Serialize(new { ok = false, error_code = 400, description })))));
+        var sender = new TelegramMessageSender(new TelegramBotClient(new TelegramBotClientOptions(TestToken)
+            { RetryCount = 0 }, http));
+
+        await Assert.ThrowsAsync<TelegramCallbackExpiredException>(() => sender.AnswerCallbackAsync("old-click"));
+        await Assert.ThrowsAsync<ApiRequestException>(() => sender.SendTextAsync(42, "Hello"));
+    }
+
+    [Theory]
+    [InlineData(400, "Bad Request: chat not found")]
+    [InlineData(500, "Bad Request: query is too old and response timeout expired")]
+    public async Task OtherCallbackErrorsStillReachTheCaller(int code, string description)
+    {
+        using var http = new HttpClient(new StubHttpHandler((_, _) => Task.FromResult(JsonResponse(
+            (HttpStatusCode)code, JsonSerializer.Serialize(new { ok = false, error_code = code, description })))));
+        var sender = new TelegramMessageSender(new TelegramBotClient(new TelegramBotClientOptions(TestToken)
+            { RetryCount = 0 }, http));
+
+        var error = await Assert.ThrowsAsync<ApiRequestException>(() => sender.AnswerCallbackAsync("click"));
+        Assert.Equal(code, error.ErrorCode);
+    }
+
     private static HttpResponseMessage JsonResponse(HttpStatusCode status, string json) => new(status)
     {
         Content = new StringContent(json, Encoding.UTF8, "application/json")

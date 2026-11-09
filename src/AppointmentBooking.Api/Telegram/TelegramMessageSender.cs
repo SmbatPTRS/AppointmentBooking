@@ -1,4 +1,5 @@
 using Telegram.Bot;
+using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types.ReplyMarkups;
 
 namespace AppointmentBooking.Api.Telegram;
@@ -27,6 +28,21 @@ public sealed class TelegramMessageSender(ITelegramBotClient client) : ITelegram
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        await client.AnswerCallbackQuery(callbackQueryId, text: text, cancellationToken: cancellationToken);
+        try
+        {
+            await client.AnswerCallbackQuery(callbackQueryId, text: text, cancellationToken: cancellationToken);
+        }
+        catch (ApiRequestException error) when (!cancellationToken.IsCancellationRequested && IsExpiredCallback(error))
+        {
+            // Only this terminal answerCallbackQuery rejection is handled specially.
+            // Abort dispatch rather than continuing with a feature mutation after an expired click.
+            throw new TelegramCallbackExpiredException();
+        }
     }
+
+    private static bool IsExpiredCallback(ApiRequestException error) => error.ErrorCode == 400 &&
+        (string.Equals(error.Message,
+            "Bad Request: query is too old and response timeout expired or query ID is invalid", StringComparison.OrdinalIgnoreCase) ||
+         string.Equals(error.Message,
+            "Bad Request: query is too old and response timeout expired", StringComparison.OrdinalIgnoreCase));
 }
