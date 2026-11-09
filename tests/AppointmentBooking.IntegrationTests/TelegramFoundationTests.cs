@@ -276,6 +276,9 @@ public sealed class TelegramFoundationTests
     }
     private sealed class StaffRepository : IStaffRepository
     {
+        public Task<StaffMember?> GetByIdForUpdateAsync(Guid staffMemberId, CancellationToken ct) => throw new NotSupportedException();
+        public Task<StaffMember?> GetByIdSnapshotAsync(Guid staffMemberId, CancellationToken ct) => throw new NotSupportedException();
+        public Task CreateWithCoordinationAsync(StaffMember staffMember, CancellationToken ct) => throw new NotSupportedException();
         public StaffMember? Profile;
         public Task<StaffMember?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default) => Task.FromResult(Profile?.UserId == userId ? Profile : null);
         public Task<StaffMember?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult(Profile?.Id == id ? Profile : null);
