@@ -1,6 +1,8 @@
 using AppointmentBooking.Application.Abstractions;
+using AppointmentBooking.Application.Common;
 using AppointmentBooking.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace AppointmentBooking.Infrastructure.Persistence;
 
@@ -23,6 +25,24 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
 
         modelBuilder.ApplyConfigurationsFromAssembly(
             typeof(AppDbContext).Assembly);
+    }
+
+    async Task<int> IUnitOfWork.SaveChangesAsync(CancellationToken ct)
+    {
+        try
+        {
+            return await SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException exception) when (exception.InnerException is PostgresException
+            { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: "ux_bookings_client_request" })
+        {
+            throw new DbConflictException(ConflictKind.UniqueRequestId, exception);
+        }
+        catch (DbUpdateException exception) when (exception.InnerException is PostgresException
+            { SqlState: PostgresErrorCodes.ExclusionViolation, ConstraintName: "ex_bookings_staff_confirmed_overlap" })
+        {
+            throw new DbConflictException(ConflictKind.Overlap, exception);
+        }
     }
 
     public async Task<ITransactionScope> BeginTransactionAsync(CancellationToken ct)

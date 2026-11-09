@@ -1,3 +1,5 @@
+using AppointmentBooking.Application.Abstractions;
+using AppointmentBooking.Application.Common;
 using AppointmentBooking.Domain.Entities;
 using AppointmentBooking.Domain.Enums;
 using AppointmentBooking.Infrastructure.Persistence;
@@ -24,8 +26,9 @@ public sealed class SchemaConstraintsTests(PostgresFixture fixture)
 
         db.Bookings.Add(CreateBooking(seed, seed.ClientId, start.AddMinutes(15)));
 
-        await Assert.ThrowsAsync<DbUpdateException>(
-            () => db.SaveChangesAsync());
+        var conflict = await Assert.ThrowsAsync<DbConflictException>(
+            () => ((IUnitOfWork)db).SaveChangesAsync(CancellationToken.None));
+        Assert.Equal(ConflictKind.Overlap, conflict.Kind);
     }
 
     [Fact]
@@ -58,8 +61,9 @@ public sealed class SchemaConstraintsTests(PostgresFixture fixture)
 
         db.Bookings.Add(CreateBooking(seed, seed.ClientId, start.AddHours(2), requestId));
 
-        await Assert.ThrowsAsync<DbUpdateException>(
-            () => db.SaveChangesAsync());
+        var conflict = await Assert.ThrowsAsync<DbConflictException>(
+            () => ((IUnitOfWork)db).SaveChangesAsync(CancellationToken.None));
+        Assert.Equal(ConflictKind.UniqueRequestId, conflict.Kind);
     }
 
     private static Booking CreateBooking(
