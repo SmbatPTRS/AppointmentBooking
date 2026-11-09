@@ -1,4 +1,6 @@
 using AppointmentBooking.Domain.Enums;
+using AppointmentBooking.Application.Abstractions;
+
 
 namespace AppointmentBooking.Application.Bookings;
 
@@ -9,7 +11,8 @@ public sealed record CreateBookingRequest(
     DateTime StartAtUtc,
     // the expected price is the price that the client sees during the booking process. It is used to validate that the price has not changed since the client started the booking process.
     decimal ExpectedPrice, 
-    int ExpectedDurationMinutes
+    int ExpectedDurationMinutes,
+    BookingCoordinationVersions? ExpectedCoordinationVersions
     );
 
 public sealed record BookingOffering(

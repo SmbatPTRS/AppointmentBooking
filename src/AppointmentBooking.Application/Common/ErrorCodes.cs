@@ -58,6 +58,9 @@ public static class ErrorCodes
     // Booking.
     public const string BookingNotFound =
         "booking.not_found";
+    
+    public const string ConfigurationChanged =
+        "booking.configuration_changed";
 
     public const string TimeUnavailable =
         "booking.time_unavailable";

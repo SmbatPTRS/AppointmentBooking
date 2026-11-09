@@ -16,6 +16,7 @@ public sealed class BookingService
     private readonly IStaffOperationLock _lock;
     private readonly AvailabilityService _availability;
     private readonly IClock _clock;
+    private readonly IBookingCoordinationRepository _coordinationRepository;
 
     public BookingService(
         IBookingRepository bookings,
@@ -24,7 +25,8 @@ public sealed class BookingService
         IUnitOfWork uow,
         IStaffOperationLock staffLock,
         AvailabilityService availability,
-        IClock clock)
+        IClock clock,
+        IBookingCoordinationRepository coordinationRepository)
     {
         _bookings = bookings;
         _scopeFactory = scopeFactory;
@@ -33,6 +35,7 @@ public sealed class BookingService
         _lock = staffLock;
         _availability = availability;
         _clock = clock;
+        _coordinationRepository = coordinationRepository;
     }
 
     public async Task<BookingDto> CreateAsync(
@@ -99,12 +102,13 @@ public sealed class BookingService
     private async Task<BookingDto> CreateInsideTransactionAsync(
         Guid clientUserId, CreateBookingRequest request, CancellationToken ct)
     {
+        
+        if (request.ExpectedCoordinationVersions is null)
+            throw new AppException(ErrorCodes.ValidationFailed, "ExpectedCoordinationVersions is required.", AppErrorKind.Validation);
+        
         // 3. Unlocked read, only to learn WHICH employee to lock.
         var preview = await _catalog.GetOfferingByIdAsync(request.StaffServiceId, ct)
                       ?? throw new AppException(ErrorCodes.StaffServiceNotFound, "StaffService not found.", AppErrorKind.NotFound);
-        
-        // Read the version in order to identify buissness configuration chnages
-        
         
         // 4. Transaction + per-employee lock on the same connection.
         await using var tx = await _uow.BeginTransactionAsync(ct);
@@ -120,7 +124,15 @@ public sealed class BookingService
 
         if (!offering.IsActive || !offering.IsServiceActive || !offering.IsStaffMemberActive)
             throw new AppException(ErrorCodes.OfferingInactive, "StaffService or its StaffMember or Service is inactive.", AppErrorKind.Conflict);
-
+        
+        var current = await _coordinationRepository.ReadVersionsAsync(offering.StaffMemberId, ct);
+        if (current != request.ExpectedCoordinationVersions)   // or compare each field if it returns several
+            throw new AppException(
+                ErrorCodes.ConfigurationChanged,
+                "Booking settings changed since you started. Please review and confirm again.",
+                AppErrorKind.Conflict);
+        
+        
         // 6. The customer must have seen the price and duration that apply now.
         if (offering.Price != request.ExpectedPrice || offering.DurationMinutes != request.ExpectedDurationMinutes)
             throw new AppException(ErrorCodes.OfferingChanged, "Price or duration has changed since the booking process started.", AppErrorKind.Conflict);
