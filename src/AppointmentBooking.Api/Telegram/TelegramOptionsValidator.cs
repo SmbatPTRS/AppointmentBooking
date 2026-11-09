@@ -14,6 +14,12 @@ public sealed class TelegramOptionsValidator : IValidateOptions<TelegramOptions>
             errors.Add("Telegram:BotToken is required and must have a valid bot-token format.");
         if (options.Mode is not ("Polling" or "Webhook"))
             errors.Add("Telegram:Mode must be Polling or Webhook.");
+        if (options.PollingTimeoutSeconds is < 1 or > 50)
+            errors.Add("Telegram:PollingTimeoutSeconds must be between 1 and 50.");
+        if (options.PollingRetryDelaySeconds is < 1 or > 60 ||
+            options.PollingMaxRetryDelaySeconds < options.PollingRetryDelaySeconds ||
+            options.PollingMaxRetryDelaySeconds > 300)
+            errors.Add("Telegram polling retry delays must be ordered, with a base of 1–60 seconds and maximum at most 300 seconds.");
         if (options.Mode == "Webhook")
         {
             if (!Uri.TryCreate(options.WebhookUrl, UriKind.Absolute, out var uri) ||
