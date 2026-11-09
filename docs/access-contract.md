@@ -2,8 +2,10 @@
 
 Person A confirms these names and rules for Task 01. The first two names match
 Person B's request. This records A's contract decision; it does not claim B/C have
-reviewed the final version. Production implementation and permission tests belong
-to Task 03. No working AccessService or production DI registration is supplied yet.
+reviewed the final version. Task 03 implements these checks in AccessService, which the API registers as a
+scoped service. Set `Owner__TelegramUserId` to the owner's positive Telegram user
+ID. An unset value or zero disables owner access. Negative values fail host
+startup validation.
 
 ## Interface
 
@@ -79,6 +81,6 @@ fake in production or expose protected operations before Task 03 authorization e
 
 The access interface and these rules are supplied on feat/entities-and-configurations
 for review into development. B can depend on the interface after integrating the
-published branch/PR through the team's normal workflow. AccessService remains Task 03.
+published branch/PR through the team's normal workflow. HTTP identity wiring remains part of Task 03.
 B's repository interfaces and implementations are kept in B's PR; this change does
 not replace them. Teammate review and approval must be recorded separately.

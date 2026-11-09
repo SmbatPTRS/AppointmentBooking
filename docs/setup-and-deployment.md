@@ -112,7 +112,7 @@ docker compose --env-file src/AppointmentBooking.Api/.env --profile full up -d -
 Open http://localhost:8080/swagger. This is a LOCAL development configuration, with
 loopback-bound ports and development Swagger. API .env is excluded from the image;
 Compose explicitly supplies the required settings. Extend its environment mapping
-with per-user API-key settings when Task 03 implements their options contract.
+with the per-user API-key settings below if the container needs protected HTTP endpoints.
 Use deployment environment/secrets for those values; never copy secret configuration
 into the Dockerfile or a tracked appsettings file.
 
@@ -153,3 +153,12 @@ For an empty development DB, simply apply migrations and seed. For existing data
 create a pg_dump custom-format backup and pg_restore it into a fresh destination
 instead of pre-creating the same schema with migrations. Data belongs in the volume;
 do not bake a live database into the application image.
+
+### HTTP API keys
+
+Configure each key in the deployment environment using
+`ApiAccess__Keys__0__Key` and `ApiAccess__Keys__0__TelegramUserId`. Increment the
+index for additional keys. Each Telegram ID must belong to an existing registered
+user. Send the key in the `X-Api-Key` header. In development Swagger, select
+**Authorize** and enter the key for **ApiKey**. Protected endpoints opt into the
+`ApiKey` authorization policy. The Telegram webhook uses its own secret.
