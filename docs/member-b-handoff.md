@@ -31,7 +31,7 @@ Tasks 10–12 and end-to-end acceptance are not complete.
 ## Verification and limits
 
 `dotnet test AppointmentBooking.sln -c Release --nologo`:
-156 unit tests and 126 integration cases passed on 2026-11-09
+156 unit tests and 139 integration cases passed on 2026-11-09
 after integrating development into feature/erik-schedule-access.
 
 Schedule tests cover persistence, duplicate constraints, scoped repository lookup,
@@ -43,12 +43,13 @@ The booking writer in these tests uses repositories/entities directly: this is
 not joint acceptance of C's BookingService or coordination-version checks.
 
 ScheduleService tests use an IAccessService double; they do not prove A's authorization rules.
-The service is not yet registered/exposed through HTTP or Telegram. No production
-allow-all authorization implementation is supplied.
+ScheduleService is registered and exposed through the five schedule HTTP routes;
+see member-b-schedule-api.md. Telegram schedule editing remains pending. No
+production allow-all authorization implementation is supplied.
 
 ## Remaining work
 
-- Complete schedule service wiring and transport adapters using A's now-merged
+- Complete Telegram schedule adapters; HTTP wiring now uses A's merged
   production access implementation. GetHoursAsync returns an authorized read-only
   model, or null when hours have not been configured.
 - Broaden service tests for commit failures and boundary cases. Cancellation while
