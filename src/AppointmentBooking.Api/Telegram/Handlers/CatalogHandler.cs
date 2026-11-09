@@ -3,7 +3,7 @@ using AppointmentBooking.Application.Common;
 
 namespace AppointmentBooking.Api.Telegram.Handlers;
 
-/// <summary>Customer catalogue screen. Registration awaits production access-service wiring.</summary>
+/// <summary>Customer catalogue screen registered for /catalog through the shared dispatcher.</summary>
 public sealed class CatalogHandler(CatalogService catalog, ITelegramMessageSender sender, IClock clock) : ITelegramHandler
 {
     public string Route => "catalog";

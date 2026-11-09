@@ -1,3 +1,6 @@
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using AppointmentBooking.Api.Telegram;
 using AppointmentBooking.Domain.Entities;
 using AppointmentBooking.Application.Abstractions;
 using AppointmentBooking.Application.Catalog;
@@ -166,5 +169,40 @@ public sealed class CatalogServiceTests(PostgresFixture fixture)
         Assert.Single(menu.Buttons);
         if (count == 0) Assert.Equal("No services are available yet.", menu.Text);
         Assert.True(state.AllowsCallback("start"));
+    }
+    [Fact]
+    public async Task RegisteredCatalogueCommandRunsThroughRealDispatcherAndReturnsToStart()
+    {
+        await using var db = fixture.CreateContext();
+        var service = new Service("Dispatcher-" + Guid.NewGuid());
+        db.Services.Add(service);
+        await db.SaveChangesAsync();
+        var sender = new FakeTelegramClient();
+        await using var factory = new ApiFactory(fixture.ConnectionString);
+        await using var configured = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+            services.AddSingleton<ITelegramMessageSender>(sender)));
+        using var client = configured.CreateClient();
+        var telegramId = Random.Shared.NextInt64(5000000000, 9000000000);
+        await using (var scope = configured.Services.CreateAsyncScope())
+        {
+            Assert.IsType<AppointmentBooking.Application.Identity.AccessService>(scope.ServiceProvider.GetRequiredService<IAccessService>());
+            var update = new Telegram.Bot.Types.Update { Message = new Telegram.Bot.Types.Message {
+                From = new Telegram.Bot.Types.User { Id = telegramId, FirstName = "Customer" },
+                Chat = new Telegram.Bot.Types.Chat { Id = telegramId }, Text = "/catalog" } };
+            await scope.ServiceProvider.GetRequiredService<TelegramUpdateDispatcher>().DispatchAsync(update);
+        }
+        Assert.Contains(sender.SentMessages, m => m.Text.Contains(service.Name));
+        var button = Assert.Single(Assert.Single(sender.SentMenus).Buttons);
+        await using (var scope = configured.Services.CreateAsyncScope())
+        {
+            var callback = new Telegram.Bot.Types.Update { CallbackQuery = new Telegram.Bot.Types.CallbackQuery {
+                Id = "catalog-return", From = new Telegram.Bot.Types.User { Id = telegramId, FirstName = "Customer" },
+                ChatInstance = "test", Data = button.CallbackData,
+                Message = new Telegram.Bot.Types.Message { Chat = new Telegram.Bot.Types.Chat { Id = telegramId } } } };
+            await scope.ServiceProvider.GetRequiredService<TelegramUpdateDispatcher>().DispatchAsync(callback);
+        }
+        Assert.Equal(2, sender.SentMenus.Count);
+        Assert.Single(sender.CallbackAnswers);
+        Assert.Single(await db.Users.Where(u => u.TelegramUserId == telegramId).ToListAsync());
     }
 }
