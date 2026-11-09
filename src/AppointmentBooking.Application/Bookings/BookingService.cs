@@ -56,7 +56,7 @@ public sealed class BookingService
         //    booking that already succeeded never fails because the slot is now taken.
         var existing = await _bookings.GetByClientAndRequestIdAsync(clientUserId, request.RequestId, ct);
         if (existing is not null)
-            return await ResolveExisting(existing, request, ct);
+            return await ResolveExisting(existing, request, _catalog, ct);
 
         try
         {
@@ -69,10 +69,11 @@ public sealed class BookingService
             // "await using" scope), so read the winner through a FRESH scope/context.
             await using var scope = _scopeFactory.CreateAsyncScope();
             var repository = scope.ServiceProvider.GetRequiredService<IBookingRepository>();
+            var catalog = scope.ServiceProvider.GetRequiredService<ICatalogRepository>();
             var winner = await repository.GetByClientAndRequestIdAsync(clientUserId, request.RequestId, ct)
                          ?? throw new InvalidOperationException(
                              "Unique violation on RequestId but no row found.");
-            return await ResolveExisting(winner, request, ct);
+            return await ResolveExisting(winner, request, catalog, ct);
         }
     }
 
@@ -80,6 +81,7 @@ public sealed class BookingService
     private async Task<BookingDto> ResolveExisting(
         Booking stored,
         CreateBookingRequest request,
+        ICatalogRepository catalog,
         CancellationToken ct)
     {
         var samePayload =
@@ -91,7 +93,7 @@ public sealed class BookingService
         if (!samePayload)
             throw new AppException(ErrorCodes.RequestIdConflict, "RequestId already used with different booking details.", AppErrorKind.Conflict);
 
-        return await ToDto(stored, ct);
+        return await ToDto(stored, catalog, ct);
     }
 
     private async Task<BookingDto> CreateInsideTransactionAsync(
@@ -100,14 +102,17 @@ public sealed class BookingService
         // 3. Unlocked read, only to learn WHICH employee to lock.
         var preview = await _catalog.GetOfferingByIdAsync(request.StaffServiceId, ct)
                       ?? throw new AppException(ErrorCodes.StaffServiceNotFound, "StaffService not found.", AppErrorKind.NotFound);
-
+        
+        // Read the version in order to identify buissness configuration chnages
+        
+        
         // 4. Transaction + per-employee lock on the same connection.
         await using var tx = await _uow.BeginTransactionAsync(ct);
         await _lock.AcquireAsync(preview.StaffMemberId, ct);
 
         var existing = await _bookings.GetByClientAndRequestIdAsync(clientUserId, request.RequestId, ct);
         if (existing is not null)
-            return await ResolveExisting(existing, request, ct);
+            return await ResolveExisting(existing, request, _catalog, ct);
 
         // 5. Re-read EVERYTHING inside the lock; the unlocked read may be stale.
         var offering = await _bookings.GetBookingOfferingAsync(request.StaffServiceId, ct)
@@ -154,17 +159,17 @@ public sealed class BookingService
         // transaction is rolled back by disposal, and CreateAsync recovers on a fresh scope.
 
         // 9. Return only after the commit succeeded.
-        return await ToDto(booking, ct);
+        return await ToDto(booking, _catalog, ct);
     }
 
-    private async Task<BookingDto> ToDto(Booking b, CancellationToken ct)
+    private async Task<BookingDto> ToDto(Booking b, ICatalogRepository catalog, CancellationToken ct)
     {
-        var offering = await _catalog.GetOfferingByIdAsync(
+        var offering = await catalog.GetOfferingByIdAsync(
             b.StaffServiceId,
             ct)
             ?? throw new InvalidOperationException("Booking has a StaffServiceId that no longer exists.");
 
-        var service = await _catalog.GetServiceAsync(offering.ServiceId, ct)
+        var service = await catalog.GetServiceAsync(offering.ServiceId, ct)
             ?? throw new InvalidOperationException("StaffService has a ServiceId that no longer exists.");
 
         return new BookingDto(
