@@ -1,3 +1,4 @@
+using AppointmentBooking.Application.Bookings;
 using AppointmentBooking.Domain.Entities;
 
 namespace AppointmentBooking.Application.Abstractions;
@@ -24,4 +25,7 @@ public interface IBookingRepository
     Task<bool> AnyBookingExistsAsync(CancellationToken ct);
 
     void Add(Booking booking); // stages only; never commits
+
+    Task<BookingOffering?> GetBookingOfferingAsync(Guid staffServiceId, CancellationToken ct);
+
 }

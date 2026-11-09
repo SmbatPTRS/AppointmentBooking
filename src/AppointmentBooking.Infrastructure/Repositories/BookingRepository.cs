@@ -1,4 +1,5 @@
 using AppointmentBooking.Application.Abstractions;
+using AppointmentBooking.Application.Bookings;
 using AppointmentBooking.Domain.Enums;
 using AppointmentBooking.Domain.Entities;
 using AppointmentBooking.Infrastructure.Persistence;
@@ -71,6 +72,23 @@ public sealed class BookingRepository(AppDbContext context) : IBookingRepository
     public void Add(Booking booking)
     {
         context.Bookings.Add(booking);
+    }
+
+    public async Task<BookingOffering?> GetBookingOfferingAsync(Guid staffServiceId, CancellationToken ct)
+    {
+        var query = from offering in context.StaffServices
+                    join service in context.Services on offering.ServiceId equals service.Id
+                    join staff in context.StaffMembers on offering.StaffMemberId equals staff.Id
+                    where offering.Id == staffServiceId
+                    select new BookingOffering(
+                        offering.Id,
+                        staff.Id,
+                        offering.Price,
+                        offering.DurationMinutes,
+                        offering.IsActive,
+                        staff.IsActive,
+                        service.IsActive);
+        return await query.SingleOrDefaultAsync(ct);
     }
 }
 

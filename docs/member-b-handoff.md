@@ -1,6 +1,6 @@
 # Member B handoff
 
-Updated 2026-11-08. Tasks 07–09 have application/repository groundwork;
+Updated 2026-11-09. Tasks 07–09 have application/repository groundwork;
 Tasks 10–12 and end-to-end acceptance are not complete.
 
 ## Implemented
@@ -18,7 +18,8 @@ Tasks 10–12 and end-to-end acceptance are not complete.
 - ScheduleService exposes GetHoursAsync, SetHoursAsync, ListDaysOffAsync, AddDayOffAsync and
   RemoveDayOffAsync with Actor, staff ID and CancellationToken. DayOffDto carries
   the ID needed for scoped deletion; repository entities are not returned.
-- ScheduleService calls IAccessService.RequireStaffManagementAsync. Every mutation
+- ScheduleService calls IAccessService.RequireStaffManagementAsync after acquiring
+  the employee lock for writes, avoiding pre-lock tracked staff snapshots. Every mutation
   uses IUnitOfWork and IStaffOperationLock before reading decision data or writing.
   Hours changes and day-off additions inspect all future confirmed bookings,
   including dates beyond the booking window, using the business timezone.
@@ -30,7 +31,8 @@ Tasks 10–12 and end-to-end acceptance are not complete.
 ## Verification and limits
 
 `dotnet test AppointmentBooking.sln -c Release --nologo`:
-134 unit tests and 35 PostgreSQL integration cases passed on 2026-11-08.
+156 unit tests and 126 integration cases passed on 2026-11-09
+after integrating development into feature/erik-schedule-access.
 
 Schedule tests cover persistence, duplicate constraints, scoped repository lookup,
 input errors, denied hours/day-off additions, future booking conflicts and removal.
@@ -40,14 +42,14 @@ edit/day-off addition rejects the conflict and leaves stored schedule data intac
 The booking writer in these tests uses repositories/entities directly: this is
 not joint acceptance of C's BookingService or coordination-version checks.
 
-Tests use an IAccessService double; they do not prove A's authorization rules.
+ScheduleService tests use an IAccessService double; they do not prove A's authorization rules.
 The service is not yet registered/exposed through HTTP or Telegram. No production
 allow-all authorization implementation is supplied.
 
 ## Remaining work
 
-- Complete service wiring and transport adapters after A's production access
-  implementation is available. GetHoursAsync now returns an authorized read-only
+- Complete schedule service wiring and transport adapters using A's now-merged
+  production access implementation. GetHoursAsync returns an authorized read-only
   model, or null when hours have not been configured.
 - Broaden service tests for commit failures and boundary cases. Cancellation while
   waiting for the PostgreSQL employee lock is covered for hours edits and day-off
@@ -55,7 +57,7 @@ allow-all authorization implementation is supplied.
   First-time hours creation, updating the same row, foreign day-off deletion,
   denied reads/removal and isolated hours reads are covered with an access-service
   double. These tests do not verify the production authorization implementation.
-- Implement CatalogService against the agreed permission and locking contracts.
+- Complete remaining CatalogService mutations; creation and active browsing are merged.
   Coordinate shared-service/offering lock ordering with A/C before mutations.
 - Integrate Task 10 controllers and Task 11 feature handlers with trusted identity
   and D's conversation/sender/navigation contracts.
