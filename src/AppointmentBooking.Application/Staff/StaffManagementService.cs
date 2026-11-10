@@ -35,6 +35,18 @@ public sealed class StaffManagementService(
         return members.Select(StaffProfile.From).ToArray();
     }
 
+    public async Task<IReadOnlyList<StaffListItem>> BrowseAsync(
+        Actor actor, bool includeInactive = false, CancellationToken ct = default)
+    {
+        if (includeInactive)
+        {
+            await access.RequireOwnerAsync(actor, ct);
+        }
+
+        var members = await staff.ListAsync(includeInactive, ct);
+        return members.Select(member => new StaffListItem(member.Id, member.DisplayName, member.IsActive)).ToArray();
+    }
+
     public async Task<StaffProfile> RenameAsync(
         Actor actor, Guid staffMemberId, string displayName, CancellationToken ct = default)
     {
