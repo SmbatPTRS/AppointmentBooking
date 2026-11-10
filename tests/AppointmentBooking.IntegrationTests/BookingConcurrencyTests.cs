@@ -2,6 +2,7 @@ using AppointmentBooking.Application.Abstractions;
 using AppointmentBooking.Domain.Entities;
 using AppointmentBooking.Infrastructure.Persistence;
 using AppointmentBooking.Infrastructure.Repositories;
+using AppointmentBooking.Infrastructure.Time;
 using AppointmentBooking.Infrastructure.Transactions;
 using AppointmentBooking.IntegrationTests.Fixtures;
 using Microsoft.EntityFrameworkCore;
@@ -85,7 +86,7 @@ public sealed class BookingConcurrencyTests(PostgresFixture fixture)
         db.Bookings.AddRange(overlapping, nonOverlapping, cancelled);
         await db.SaveChangesAsync();
 
-        var repository = new BookingRepository(db);
+        var repository = new BookingRepository(db, new SystemClock());
         var overlaps = await repository.GetConfirmedOverlappingAsync(
             seed.StaffId, now.AddHours(1).AddMinutes(15), now.AddHours(1).AddMinutes(45), CancellationToken.None);
         var future = await repository.GetFutureConfirmedAsync(

@@ -4,6 +4,7 @@ using AppointmentBooking.Application.Common;
 using AppointmentBooking.Domain.Entities;
 using AppointmentBooking.Infrastructure.Persistence;
 using AppointmentBooking.Infrastructure.Repositories;
+using AppointmentBooking.Infrastructure.Time;
 using AppointmentBooking.IntegrationTests.Fixtures;
 using Microsoft.EntityFrameworkCore;
 
@@ -30,7 +31,7 @@ public sealed class BusinessSettingsServiceTests
 
         var actor = new Actor(user.Id);
         var settings = new BusinessSettingsService(new OwnerAccess(actor),
-            new BusinessSettingsRepository(db), new BookingRepository(db),
+            new BusinessSettingsRepository(db), new BookingRepository(db, new SystemClock()),
             new BookingCoordinationRepository(db), db);
 
         var invalid = await Assert.ThrowsAsync<AppException>(
