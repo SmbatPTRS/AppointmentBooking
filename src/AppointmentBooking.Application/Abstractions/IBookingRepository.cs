@@ -15,10 +15,6 @@ public interface IBookingRepository
 // all confirmed bookings starting at/after fromUtc (B uses this for schedule edits)
     Task<IReadOnlyList<Booking>> GetFutureConfirmedAsync(Guid staffId, DateTime fromUtc, CancellationToken ct);
 
-// for staff/day lists (Task 15)
-    Task<IReadOnlyList<Booking>> GetByStaffAndRangeAsync(Guid staffId, DateTime fromUtc, DateTime toUtc,
-        CancellationToken ct);
-
     Task<IReadOnlyList<Booking>> GetByClientAsync(Guid clientUserId, CancellationToken ct);
 
 // B/A need this for the "timezone locked after first booking" rule
@@ -30,12 +26,10 @@ public interface IBookingRepository
     
     Task<IReadOnlyList<BookingDto>> ListByClientAsync(Guid clientUserId, CancellationToken ct);
     
-    // Task<List<BookingDto>> ListBookingsByStaffAsync(Guid staffMemberId, CancellationToken ct);
-    
     Task<BookingDto?> Cancel(Guid clientUserId, Guid bookingId, CancellationToken ct);
     
     Task<BookingDto?> Complete(Guid staffMemberId, Guid bookingId, CancellationToken ct);
     
-    Task<IReadOnlyList<Booking>> ListByStaffAndRangeAsync(
+    Task<IReadOnlyList<BookingDto>> ListByStaffAndRangeAsync(
         Guid staffMemberId, DateTime fromUtc, DateTime toUtc, CancellationToken ct);
 }

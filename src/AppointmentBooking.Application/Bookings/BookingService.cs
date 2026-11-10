@@ -116,7 +116,6 @@ public sealed class BookingService
         if (dto is null)
             return null;
         
-        await _uow.SaveChangesAsync(ct); // commit the cancellation
         return dto;
     }
     
@@ -125,18 +124,17 @@ public sealed class BookingService
     {
         ArgumentNullException.ThrowIfNull(actor);
 
-        var staffMemberId = actor.UserId;
-
         var booking = await _bookings.GetByIdAsync(bookingId, ct);
-        if (booking is null || booking.StaffMemberId != staffMemberId)
+        if (booking is null)
             return null;
+
+        var staffMemberId = booking.StaffMemberId;
+        await _access.RequireStaffManagementAsync(actor, staffMemberId, ct);
 
         var dto = await _bookings.Complete(staffMemberId, bookingId, ct);
         if (dto is null)
             return null;
-        
-        await _uow.SaveChangesAsync(ct); // commit the completion
-        
+
         return dto;
     }
     
@@ -162,7 +160,7 @@ public sealed class BookingService
                 "End date is before start date.", AppErrorKind.Validation);
 
         // Owner: any employee. Staff: only their own profile (active or not).
-        await _access.RequireStaffManagementAsync(actor, staffMemberId, ct);
+        await _access.RequireAppointmentManagementAsync(actor, staffMemberId, ct);
 
         var settings = await _businessSettingsRepository.GetAsync(ct)
                        ?? throw new AppException(ErrorCodes.BusinessSettingsNotFound,
@@ -174,8 +172,7 @@ public sealed class BookingService
         var bookings = await _bookings.ListByStaffAndRangeAsync(
             staffMemberId, fromUtc, toUtc, ct);
 
-        return await Task.WhenAll(
-            bookings.Select(b => ToDto(b, _catalog, ct)));
+        return bookings;
     }
     
     

@@ -117,6 +117,8 @@ public sealed class BookingLifecycleTests(PostgresFixture fixture)
     {
         await using var seed = await BookingTestSetup.CreateAsync(fixture);
         var booking = await InsertBookingAsync(seed);
+        var secondBooking = await InsertBookingAsync(
+            seed, startsAtUtc: booking.StartsAtUtc.AddHours(1));
         var staff = await GetStaffActorAsync(booking);
         var date = DateOnly.FromDateTime(booking.StartsAtUtc);
         await using var scope = seed.Factory.Services.CreateAsyncScope();
@@ -128,7 +130,9 @@ public sealed class BookingLifecycleTests(PostgresFixture fixture)
 
         var appointments = await service.ListByStaffAndRangeAsync(
             staff, booking.StaffMemberId, date, date, default);
-        Assert.Equal(booking.Id, Assert.Single(appointments).Id);
+        Assert.Equal(2, appointments.Count);
+        Assert.Contains(appointments, appointment => appointment.Id == booking.Id);
+        Assert.Contains(appointments, appointment => appointment.Id == secondBooking.Id);
 
         var nextDay = date.AddDays(1);
         Assert.Empty(await service.ListByStaffAndRangeAsync(
@@ -142,13 +146,21 @@ public sealed class BookingLifecycleTests(PostgresFixture fixture)
         return new Actor(staff.UserId);
     }
 
-    private async Task<Booking> InsertBookingAsync(BookingTestSetup seed, BookingStatus status = BookingStatus.Confirmed)
+    private async Task<Booking> InsertBookingAsync(
+        BookingTestSetup seed,
+        BookingStatus status = BookingStatus.Confirmed,
+        DateTime? startsAtUtc = null)
     {
         await using var db = fixture.CreateContext();
-        var request = seed.Request;
+        var request = seed.Request with
+        {
+            RequestId = Guid.NewGuid(),
+            StartAtUtc = startsAtUtc ?? seed.Request.StartAtUtc
+        };
         var offering = await db.StaffServices.SingleAsync(x => x.Id == request.StaffServiceId);
         var booking = new Booking(seed.Client.Id, offering.StaffMemberId, offering.Id, request.RequestId,
-            request.StartAtUtc, request.ExpectedPrice, request.ExpectedDurationMinutes, request.StartAtUtc.AddHours(-2));
+            request.StartAtUtc, request.ExpectedPrice, request.ExpectedDurationMinutes,
+            request.StartAtUtc.AddHours(-2));
         if (status == BookingStatus.Cancelled)
             booking.Cancel(booking.StartsAtUtc.AddSeconds(-1));
         if (status == BookingStatus.Completed)
