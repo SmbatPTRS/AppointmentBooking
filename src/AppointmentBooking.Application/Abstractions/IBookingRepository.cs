@@ -27,5 +27,15 @@ public interface IBookingRepository
     void Add(Booking booking); // stages only; never commits
 
     Task<BookingOffering?> GetBookingOfferingAsync(Guid staffServiceId, CancellationToken ct);
-
+    
+    Task<IReadOnlyList<BookingDto>> ListByClientAsync(Guid clientUserId, CancellationToken ct);
+    
+    // Task<List<BookingDto>> ListBookingsByStaffAsync(Guid staffMemberId, CancellationToken ct);
+    
+    Task<BookingDto?> Cancel(Guid clientUserId, Guid bookingId, CancellationToken ct);
+    
+    Task<BookingDto?> Complete(Guid staffMemberId, Guid bookingId, CancellationToken ct);
+    
+    Task<IReadOnlyList<Booking>> ListByStaffAndRangeAsync(
+        Guid staffMemberId, DateTime fromUtc, DateTime toUtc, CancellationToken ct);
 }

@@ -2,6 +2,7 @@ using AppointmentBooking.Application.Abstractions;
 using AppointmentBooking.Application.Common;
 using AppointmentBooking.Domain.Entities;
 using AppointmentBooking.Application.Availability;
+using AppointmentBooking.Application.Business;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace AppointmentBooking.Application.Bookings;
@@ -11,31 +12,51 @@ public sealed class BookingService
 
     private readonly IBookingRepository _bookings;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IAccessService _access;
     private readonly ICatalogRepository _catalog;
     private readonly IUnitOfWork _uow;
     private readonly IStaffOperationLock _lock;
     private readonly AvailabilityService _availability;
     private readonly IClock _clock;
     private readonly IBookingCoordinationRepository _coordinationRepository;
+    private readonly IBusinessSettingsRepository _businessSettingsRepository;
+    
+    private async Task<string> getServiceNameAsync(Booking booking, ICatalogRepository catalog, CancellationToken ct)
+    {
+        var offering = await catalog.GetOfferingByIdAsync(
+                           booking.StaffServiceId,
+                           ct)
+                       ?? throw new InvalidOperationException("Booking has a StaffServiceId that no longer exists.");
+
+        var service = await catalog.GetServiceAsync(offering.ServiceId, ct)
+                      ?? throw new InvalidOperationException("StaffService has a ServiceId that no longer exists.");
+        
+        return service.Name;
+    }
+
 
     public BookingService(
         IBookingRepository bookings,
         IServiceScopeFactory scopeFactory,
+        IAccessService access,
         ICatalogRepository catalog,
         IUnitOfWork uow,
         IStaffOperationLock staffLock,
         AvailabilityService availability,
         IClock clock,
-        IBookingCoordinationRepository coordinationRepository)
+        IBookingCoordinationRepository coordinationRepository,
+        IBusinessSettingsRepository businessSettingsRepository)
     {
         _bookings = bookings;
         _scopeFactory = scopeFactory;
+        _access = access;
         _catalog = catalog;
         _uow = uow;
         _lock = staffLock;
         _availability = availability;
         _clock = clock;
         _coordinationRepository = coordinationRepository;
+        _businessSettingsRepository = businessSettingsRepository;
     }
 
     public async Task<BookingDto> CreateAsync(
@@ -79,6 +100,85 @@ public sealed class BookingService
             return await ResolveExisting(winner, request, catalog, ct);
         }
     }
+    
+    public async Task<BookingDto?> CancelAsync(
+        Actor actor, Guid bookingId, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+
+        var clientUserId = actor.UserId;
+
+        var booking = await _bookings.GetByIdAsync(bookingId, ct);
+        if (booking is null || booking.ClientUserId != clientUserId)
+            return null;
+
+        var dto = await _bookings.Cancel(clientUserId, bookingId, ct);
+        if (dto is null)
+            return null;
+        
+        await _uow.SaveChangesAsync(ct); // commit the cancellation
+        return dto;
+    }
+    
+    public async Task<BookingDto?> CompleteAsync(
+        Actor actor, Guid bookingId, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+
+        var staffMemberId = actor.UserId;
+
+        var booking = await _bookings.GetByIdAsync(bookingId, ct);
+        if (booking is null || booking.StaffMemberId != staffMemberId)
+            return null;
+
+        var dto = await _bookings.Complete(staffMemberId, bookingId, ct);
+        if (dto is null)
+            return null;
+        
+        await _uow.SaveChangesAsync(ct); // commit the completion
+        
+        return dto;
+    }
+    
+    public async Task<IReadOnlyList<BookingDto>> ListBookingsByClientAsync(
+        Actor actor, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+
+        var clientUserId = actor.UserId;
+
+        var dtos = await _bookings.ListByClientAsync(clientUserId, ct);
+        return dtos;
+    }
+    
+    public async Task<IReadOnlyList<BookingDto>> ListByStaffAndRangeAsync(
+        Actor actor, Guid staffMemberId,
+        DateOnly localDateFrom, DateOnly localDateTo, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+
+        if (localDateTo < localDateFrom)
+            throw new AppException(ErrorCodes.InvalidBookingTime,
+                "End date is before start date.", AppErrorKind.Validation);
+
+        // Owner: any employee. Staff: only their own profile (active or not).
+        await _access.RequireStaffManagementAsync(actor, staffMemberId, ct);
+
+        var settings = await _businessSettingsRepository.GetAsync(ct)
+                       ?? throw new AppException(ErrorCodes.BusinessSettingsNotFound,
+                           "Business settings not found.", AppErrorKind.NotFound);
+
+        var (fromUtc, toUtc) = BusinessTimeConverter.GetUtcRange(
+            localDateFrom, localDateTo, settings.TimeZoneId);
+
+        var bookings = await _bookings.ListByStaffAndRangeAsync(
+            staffMemberId, fromUtc, toUtc, ct);
+
+        return await Task.WhenAll(
+            bookings.Select(b => ToDto(b, _catalog, ct)));
+    }
+    
+    
 
     /// <summary>Same RequestId already stored: return it if the intent matches, else reject.</summary>
     private async Task<BookingDto> ResolveExisting(
@@ -177,18 +277,12 @@ public sealed class BookingService
 
     private async Task<BookingDto> ToDto(Booking b, ICatalogRepository catalog, CancellationToken ct)
     {
-        var offering = await catalog.GetOfferingByIdAsync(
-            b.StaffServiceId,
-            ct)
-            ?? throw new InvalidOperationException("Booking has a StaffServiceId that no longer exists.");
-
-        var service = await catalog.GetServiceAsync(offering.ServiceId, ct)
-            ?? throw new InvalidOperationException("StaffService has a ServiceId that no longer exists.");
+        var serviceName = await getServiceNameAsync(b, catalog, ct);
 
         return new BookingDto(
             b.Id,
             b.StaffServiceId,
-            service.Name,
+            serviceName,
             b.Price,
             b.DurationMinutes,
             b.StartsAtUtc,
