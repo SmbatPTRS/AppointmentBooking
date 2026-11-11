@@ -134,6 +134,51 @@ public sealed class ConversationStateStoreTests
         Assert.Equal("20", final.State.Selections["count"]);
     }
 
+    [Fact]
+    public void RepeatedItemRendersReuseMappingsAtCapacity()
+    {
+        var state = new ConversationState(DateTime.UtcNow);
+        var ids = Enumerable.Range(0, 256).Select(_ => Guid.NewGuid()).ToArray();
+        var original = ids.Select(id => state.ItemButton("Employee", "details", id).CallbackData).ToArray();
+
+        for (var render = 0; render < 3; render++)
+        {
+            var buttons = ids.Reverse().Select(id => state.ItemButton("Updated label", "details", id)).ToArray();
+            Assert.Equal(original.Reverse(), buttons.Select(button => button.CallbackData));
+            foreach (var button in buttons)
+            {
+                Assert.Equal("Updated label", button.Text);
+                Assert.True(CallbackDataParser.TryParse(button.CallbackData, out var callback));
+                Assert.True(state.TryResolveItem(callback!, out var selected));
+                Assert.Contains(selected, ids);
+            }
+        }
+        Assert.Throws<InvalidOperationException>(() => state.ItemButton("Another", "details", Guid.NewGuid()));
+    }
+
+    [Fact]
+    public void ReuseBindsBothRouteAndItemAndDoesNotSurviveScreenTransitions()
+    {
+        var now = DateTime.UtcNow;
+        var state = new ConversationState(now);
+        var id = Guid.NewGuid();
+        var details = state.ItemButton("Details", "details", id).CallbackData;
+        var rename = state.ItemButton("Rename", "rename", id).CallbackData;
+        Assert.NotEqual(details, rename);
+        Assert.True(CallbackDataParser.TryParse(details, out var parsed));
+        Assert.True(CallbackDataParser.TryParse(rename, out var otherRoute));
+        Assert.False(state.TryResolveItem(parsed! with { Route = "rename" }, out _));
+        Assert.True(state.TryResolveItem(otherRoute!, out var selected));
+        Assert.Equal(id, selected);
+
+        state.BeginStep("details", now);
+        var fresh = state.ItemButton("Details", "details", id).CallbackData;
+        Assert.NotEqual(details, fresh);
+        Assert.False(state.TryResolveItem(parsed!, out _));
+        state.Reset(now);
+        Assert.NotEqual(fresh, state.ItemButton("Details", "details", id).CallbackData);
+    }
+
     public sealed record Draft(Guid StaffId, string? PendingName);
     private sealed class Clock : IClock
     { public DateTime UtcNow { get; set; } = new(2026, 11, 11, 10, 0, 0, DateTimeKind.Utc); }

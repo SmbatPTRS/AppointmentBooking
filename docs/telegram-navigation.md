@@ -71,7 +71,10 @@ removing its key and sending a version-1 route callback. Never enable the same i
 route with a plain `Button` or `SetAllowedCallbacks` entry.
 
 Callbacks are at most 64 UTF-8 bytes: a 20-character route and 8-character item key
-fit exactly. There are at most 256 item mappings per screen; paginate larger lists.
+fit exactly. There are at most 256 distinct route/item mappings per screen; paginate
+larger lists. Rendering the same route/item pair again reuses its existing key, even
+at the limit. Labels can change without allocating another mapping. A new screen
+revision clears these mappings, so earlier-screen buttons still fail validation.
 Raw UUIDs and arbitrary user fields are not added to callback payloads.
 
 The dispatcher owns all callback acknowledgements. Feature handlers must not acknowledge
@@ -139,3 +142,9 @@ assistant run, including all 17 navigation tests. After Docker became available,
 previously setup-failing database tests passed on rerun, with no failures or skipped tests.
 Together the runs cover all 305 tests (167 unit and 138 integration) on the same code.
 Database retry results: task22-database-retry.trx in the ignored integration TestResults folder.
+
+Review follow-up: item-button redraw regression verified with a 256-item screen, repeated
+renders, changed labels, route isolation and failed-send retry retaining keys/confirmation.
+The regression failed with the original capacity exception before the fix. After reusing
+existing route/item bindings, the full suite passed: 169 unit + 139 integration = 308 tests,
+zero failures/skips. New screens still clear mappings and reject previous revisions.

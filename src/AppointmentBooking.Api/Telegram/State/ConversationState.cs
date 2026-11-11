@@ -43,6 +43,14 @@ public sealed class ConversationState
     public TelegramMenuButton ItemButton(string label, string route, Guid itemId)
     {
         if (itemId == Guid.Empty) throw new ArgumentException("An item ID is required.", nameof(itemId));
+        // A redraw/retry is the same screen: reuse its binding before enforcing capacity.
+        // The route is part of the binding, so another action cannot reuse this item's key.
+        foreach (var existing in items)
+        {
+            if (existing.Value.Route != route || existing.Value.Id != itemId) continue;
+            allowedCallbacks.Add(route);
+            return new(label, CallbackDataParser.FormatItem(route, Revision, existing.Key));
+        }
         if (items.Count >= 256) throw new InvalidOperationException("Too many buttons on one screen.");
         string key;
         do { key = Guid.NewGuid().ToString("N")[..8]; } while (items.ContainsKey(key));

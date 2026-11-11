@@ -190,6 +190,45 @@ public sealed class TelegramNavigationTests
         Assert.Contains("expired", test.Sender.CallbackAnswers.Last().Text);
     }
 
+    [Fact]
+    public async Task FullItemScreenCanRetryFailedSendWithoutLosingMappingsOrIntent()
+    {
+        Harness? test = null;
+        var ids = Enumerable.Range(0, 256).Select(_ => Guid.NewGuid()).ToArray();
+        string[]? firstCallbacks = null;
+        Guid? confirmation = null;
+        test = new Harness(new Handler("large", async (context, ct) =>
+        {
+            if (!(context.IsRetry && context.State.Step == "large"))
+                context.State.EnterFlow("large", test!.Clock.UtcNow);
+            context.State.ConfirmationRequestId ??= Guid.NewGuid();
+            confirmation ??= context.State.ConfirmationRequestId;
+            Assert.Equal(confirmation, context.State.ConfirmationRequestId);
+            var buttons = ids.Select(id => context.State.ItemButton("Employee", "demo.details", id)).ToArray();
+            firstCallbacks ??= buttons.Select(button => button.CallbackData).ToArray();
+            Assert.Equal(firstCallbacks, buttons.Select(button => button.CallbackData));
+            await test!.Sender.SendMenuAsync(context.ChatId, "Large staff list", buttons, ct);
+        }));
+        var update = test.Text("/large");
+        test.Sender.FailNextSend(new HttpRequestException("Temporary send failure"));
+        await Assert.ThrowsAsync<HttpRequestException>(() => test.Dispatcher.DispatchAsync(update));
+        await test.Dispatcher.DispatchAsync(update);
+
+        Assert.Equal(256, Assert.Single(test.Sender.SentMenus).Buttons.Count);
+        using (var lease = await test.Store.AcquireAsync(new(42, -999)))
+        {
+            Assert.Equal(confirmation, lease.State.ConfirmationRequestId);
+            for (var index = 0; index < ids.Length; index++)
+            {
+                Assert.True(CallbackDataParser.TryParse(firstCallbacks![index], out var callback));
+                Assert.True(lease.State.TryResolveItem(callback!, out var selected));
+                Assert.Equal(ids[index], selected);
+            }
+        }
+        await test.Message("/back");
+        Assert.Equal("Main menu", test.Sender.SentMenus.Last().Text);
+    }
+
     private sealed class Harness
     {
         public readonly Clock Clock = new();
