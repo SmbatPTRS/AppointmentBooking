@@ -17,6 +17,6 @@ public sealed class StartHandler(ITelegramMessageSender sender, IStaffRepository
         var owner = ownerId > 0 && context.Caller.TelegramUserId == ownerId;
         context.State.Reset(clock.UtcNow);
         var buttons = MainMenuKeyboard.Create(context.State, owner, profile?.IsActive == true, profile is not null);
-        await sender.SendMenuAsync(context.ChatId, $"Welcome, {context.Caller.DisplayName}! Choose an option.", buttons, ct);
+        await sender.SendMenuAsync(context.ChatId, $"Welcome, {context.Caller.DisplayName}! Your Telegram user ID is {context.Caller.TelegramUserId}. Choose an option.", buttons, ct);
     }
 }

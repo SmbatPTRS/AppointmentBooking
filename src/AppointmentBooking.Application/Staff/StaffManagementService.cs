@@ -12,6 +12,31 @@ public sealed class StaffManagementService(
     IStaffOperationLock staffLock,
     IUnitOfWork unitOfWork)
 {
+    public async Task<StaffProfile> GetOwnProfileAsync(Actor actor, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+        if (await users.GetByIdAsync(actor.UserId, ct) is null)
+            throw new AppException(ErrorCodes.Unauthorized, "The caller was not found.", AppErrorKind.Unauthorized);
+        var profile = await staff.GetByUserIdAsync(actor.UserId, ct) ?? throw StaffNotFound();
+        await access.RequireStaffManagementAsync(actor, profile.Id, ct);
+        return StaffProfile.From(profile);
+    }
+
+    public async Task<RegisteredStaffCandidate> FindRegisteredUserAsync(
+        Actor actor, long telegramUserId, CancellationToken ct = default)
+    {
+        await access.RequireOwnerAsync(actor, ct);
+        if (telegramUserId <= 0)
+            throw new AppException(ErrorCodes.ValidationFailed, "A positive Telegram user ID is required.", AppErrorKind.Validation);
+
+        var user = await users.GetByTelegramUserIdAsync(telegramUserId, ct)
+            ?? throw new AppException(ErrorCodes.UserNotFound, "User not found.", AppErrorKind.NotFound);
+        if (await staff.GetByUserIdAsync(user.Id, ct) is not null)
+            throw new AppException(ErrorCodes.StaffAlreadyExists, "This user already has a staff profile.", AppErrorKind.Conflict);
+
+        return new RegisteredStaffCandidate(user.Id, user.TelegramUserId, user.DisplayName, user.TelegramUsername);
+    }
+
     public async Task<StaffProfile> CreateAsync(
         Actor actor, Guid userId, string displayName, CancellationToken ct = default)
     {
