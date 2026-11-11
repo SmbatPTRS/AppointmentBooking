@@ -13,7 +13,7 @@ public sealed class BookingServiceTests
     public async Task InvalidCreationInputIsRejectedBeforeReadingStorage(string invalidField)
     {
         // Invalid requests must exit before touching any dependency.
-        var service = new BookingService(null!, null!, null!, null!, null!, null!, null!, null!);
+        var service = new BookingService(null!, null!, null!, null!, null!, null!, null!, null!, null!, null!);
         var actor = new Actor(Guid.NewGuid());
         var request = new CreateBookingRequest(Guid.NewGuid(), actor.UserId, Guid.NewGuid(),
             DateTime.UnixEpoch.AddHours(1), 25m, 30);
@@ -28,6 +28,19 @@ public sealed class BookingServiceTests
 
         var error = await Assert.ThrowsAsync<AppException>(() => service.CreateAsync(actor, request, default));
         Assert.Equal(ErrorCodes.ValidationFailed, error.Code);
+        Assert.Equal(AppErrorKind.Validation, error.Kind);
+    }
+
+    [Fact]
+    public async Task ReversedStaffDateRangeIsRejectedBeforeReadingDependencies()
+    {
+        var service = new BookingService(null!, null!, null!, null!, null!, null!, null!, null!, null!, null!);
+        var date = new DateOnly(2026, 11, 10);
+
+        var error = await Assert.ThrowsAsync<AppException>(() => service.ListByStaffAndRangeAsync(
+            new Actor(Guid.NewGuid()), Guid.NewGuid(), date, date.AddDays(-1), default));
+
+        Assert.Equal(ErrorCodes.InvalidBookingTime, error.Code);
         Assert.Equal(AppErrorKind.Validation, error.Kind);
     }
 }

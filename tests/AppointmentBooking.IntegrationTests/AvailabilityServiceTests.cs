@@ -34,7 +34,7 @@ public sealed class AvailabilityServiceTests(PostgresFixture fixture)
         db.AddRange(user, staff, service, offering, new WorkingHours(staff.Id, new(9, 0), new(11, 0)));
         await db.SaveChangesAsync();
         var availability = new AvailabilityService(new CatalogRepository(db), new StaffRepository(db),
-            new ScheduleRepository(db), new BusinessSettingsRepository(db), new BookingRepository(db),
+            new ScheduleRepository(db), new BusinessSettingsRepository(db), new BookingRepository(db, clock),
             clock, new AvailabilityCalculator(new BookingOptions()));
         Task<IReadOnlyList<AvailableSlot>> List() =>
             availability.ListAsync(staff.Id, offering.Id, new(2026, 11, 4), CancellationToken.None);

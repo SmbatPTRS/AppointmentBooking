@@ -7,8 +7,10 @@ using AppointmentBooking.Api.Configuration;
 using AppointmentBooking.Api.Telegram;
 using AppointmentBooking.Application.Availability;
 using AppointmentBooking.Application.Bookings;
+using AppointmentBooking.Application.Business;
 using AppointmentBooking.Application.Abstractions;
 using AppointmentBooking.Application.Identity;
+using AppointmentBooking.Application.Staff;
 using AppointmentBooking.Infrastructure.Repositories;
 using Microsoft.Extensions.Options;
 using AppointmentBooking.Infrastructure;
@@ -47,6 +49,8 @@ builder.Services.AddScoped<AvailabilityService>();
 builder.Services.AddScoped<AppointmentBooking.Application.Scheduling.ScheduleChangeValidator>();
 builder.Services.AddScoped<AppointmentBooking.Application.Scheduling.ScheduleService>();
 builder.Services.AddScoped<BookingService>();
+builder.Services.AddScoped<BusinessSettingsService>();
+builder.Services.AddScoped<StaffManagementService>();
 builder.Services.AddOptions<ApiAccessOptions>()
     .BindConfiguration(ApiAccessOptions.SectionName)
     .Validate(options => options.Keys.All(entry =>
