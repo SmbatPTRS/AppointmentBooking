@@ -56,3 +56,4 @@ AppDbContext implements IUnitOfWork; there is no separate forwarding UnitOfWork 
 - [API and bot flows](docs/api-and-bot-flows.md)
 - [Setup and deployment](docs/setup-and-deployment.md)
 - [Acceptance criteria](docs/acceptance-tests.md)
+- [Shared Telegram navigation and feature handoff](docs/telegram-navigation.md)

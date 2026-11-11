@@ -82,7 +82,9 @@ or services in state. Never use callback payload as caller authority.
 
 ## Button and navigation contract
 
-Callback format: `1:{revision-as-32-hex-digits}:{route}`; it fits Telegram's 64-byte limit.
+Route callback format: `1:{revision-as-32-hex-digits}:{route}`; it fits Telegram's 64-byte limit.
+Task 22 adds item buttons with short server-side keys and typed feature state; see
+[the shared navigation contract and executable example](telegram-navigation.md).
 Format/parser validate version, route and revision. Before feature dispatch, the callback
 must match the user/chat state's current revision and its explicitly allowed route set.
 Malformed/expired/copied/old buttons are acknowledged with a safe recovery message.
@@ -94,9 +96,10 @@ after 30 minutes. Expired idle states/locks are removed opportunistically on lat
 active/waiting callers keep their entries. State is in memory for one app instance and
 resets on process restart. Old buttons after restart fail safely.
 
-Basic /back and /cancel return to the main menu. Full step-by-step Back history, feature
-navigation integration, cleanup stress/race testing and complete retry guarantees remain
-Task 22/23 work; these basic commands are not a full feature-screen navigation system.
+Back now restores the previous feature screen and its saved fields. Cancel clears the
+flow and returns to the main menu. Feature handlers render restored screens when
+IsNavigation is true; they must adopt the shared contract rather than inventing their
+own Back/Cancel handling. See telegram-navigation.md for retry and confirmation rules.
 
 Expected AppException business rejections return Handled after a safe reply. Unexpected
 processing failures, sending/acknowledgement failures and cancellation propagate so the
