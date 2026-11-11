@@ -192,6 +192,15 @@ public sealed class CatalogServiceTests(PostgresFixture fixture)
             await scope.ServiceProvider.GetRequiredService<TelegramUpdateDispatcher>().DispatchAsync(update);
         }
         Assert.Contains(sender.SentMessages, m => m.Text.Contains(service.Name));
+        var sentCount = sender.SentMessages.Count;
+        await using (var ordinaryScope = configured.Services.CreateAsyncScope())
+        {
+            var ordinary = new Telegram.Bot.Types.Update { Message = new Telegram.Bot.Types.Message {
+                From = new Telegram.Bot.Types.User { Id = telegramId, FirstName = "Customer" },
+                Chat = new Telegram.Bot.Types.Chat { Id = telegramId }, Text = "hello" } };
+            await ordinaryScope.ServiceProvider.GetRequiredService<TelegramUpdateDispatcher>().DispatchAsync(ordinary);
+        }
+        Assert.Equal(sentCount, sender.SentMessages.Count);
         var button = Assert.Single(Assert.Single(sender.SentMenus).Buttons);
         await using (var scope = configured.Services.CreateAsyncScope())
         {

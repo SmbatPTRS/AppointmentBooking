@@ -10,6 +10,12 @@ public sealed class CatalogHandler(CatalogService catalog, ITelegramMessageSende
 
     public async Task HandleAsync(TelegramHandlerContext context, CancellationToken ct)
     {
+        // Ordinary text is routed to the current step by D's dispatcher.
+        // Ignore it without replacing the screen or invalidating its buttons.
+        var command = context.Text?.Split(' ', 2)[0].Split('@', 2)[0];
+        if (context.Callback?.Route != Route && command != "/catalog")
+            return;
+
         var services = await catalog.ListActiveServicesAsync(ct);
         // Ten names of at most 200 characters fit comfortably within Telegram's limit.
         foreach (var page in services.Chunk(10))
