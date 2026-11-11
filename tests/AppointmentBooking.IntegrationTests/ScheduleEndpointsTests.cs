@@ -227,6 +227,9 @@ public sealed class ScheduleEndpointsTests(PostgresFixture fixture)
     }
 
     [Theory]
+    [InlineData("{\"closesAt\":\"18:00:00\"}")]
+    [InlineData("{\"opensAt\":\"09:00:00\"}")]
+    [InlineData("{}")]
     [InlineData("null")]
     [InlineData("{\"opensAt\":\"not-a-time\",\"closesAt\":\"18:00:00\"}")]
     [InlineData("{")]
@@ -239,5 +242,15 @@ public sealed class ScheduleEndpointsTests(PostgresFixture fixture)
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         await using var db = fixture.CreateContext();
         Assert.False(await db.WorkingHours.AnyAsync(h => h.StaffMemberId == setup.Staff.Id));
+    }
+    [Fact]
+    public async Task ExplicitMidnightOpeningIsAccepted()
+    {
+        await using var setup = await SeedAsync();
+        using var client = setup.Client();
+        var hours = new WorkingHoursModel(new(0, 0), new(18, 0));
+        using var response = await client.PutAsJsonAsync(setup.Schedule, hours);
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal(hours, await client.GetFromJsonAsync<WorkingHoursModel>(setup.Schedule));
     }
 }

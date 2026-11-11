@@ -1,8 +1,8 @@
 namespace AppointmentBooking.Application.Scheduling;
 
 public sealed record WorkingHoursModel(
-    TimeOnly OpensAt,
-    TimeOnly ClosesAt,
+    [property: System.Text.Json.Serialization.JsonRequired] TimeOnly OpensAt,
+    [property: System.Text.Json.Serialization.JsonRequired] TimeOnly ClosesAt,
     TimeOnly? BreakStartsAt = null,
     TimeOnly? BreakEndsAt = null);
 
