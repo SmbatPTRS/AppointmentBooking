@@ -7,6 +7,7 @@ public sealed class ConversationStateStore(IClock clock)
 {
     private readonly object gate = new();
     private readonly Dictionary<ConversationKey, Entry> entries = [];
+    internal DateTime UtcNow => clock.UtcNow;
 
     public async Task<Lease> AcquireAsync(ConversationKey key, CancellationToken ct = default)
     {

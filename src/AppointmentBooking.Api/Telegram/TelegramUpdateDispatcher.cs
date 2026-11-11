@@ -19,7 +19,7 @@ public sealed class TelegramUpdateDispatcher
         ITelegramMessageSender sender, ConversationStateStore states, IOptions<TelegramOptions> options)
     {
         this.handlers = handlers.ToDictionary(handler => handler.Route, StringComparer.Ordinal);
-        if (this.handlers.Keys.Any(route => !CallbackDataParser.IsValidRoute(route)))
+        if (this.handlers.Keys.Any(route => !CallbackDataParser.IsValidRoute(route) || route is "back" or "cancel"))
             throw new InvalidOperationException("Invalid Telegram handler route.");
         this.actors = actors;
         this.sender = sender;
@@ -60,14 +60,26 @@ public sealed class TelegramUpdateDispatcher
 
         using var lease = await states.AcquireAsync(new ConversationKey(telegramUser.Id, chat.Id), ct);
         var state = lease.State;
+        // A send retry for Back must render the same restored screen, not pop history again.
+        var deliveryKey = $"{update.Id}|{callback?.Id}|{callback?.Data}|{update.Message?.Text}";
+        var resumingNavigation = state.PendingNavigation?.Key == deliveryKey;
+        var resumingDispatch = state.PendingDispatch?.Key == deliveryKey;
+        if (!resumingNavigation) state.PendingNavigation = null;
+        if (!resumingDispatch) state.PendingDispatch = null;
+        Guid? itemId = null;
         string route;
         if (parsed is not null)
         {
-            if (parsed.Revision != state.Revision || !state.AllowsCallback(parsed.Route))
+            var itemValid = parsed.ButtonKey is null
+                ? state.AllowsPlainCallback(parsed.Route)
+                : state.TryResolveItem(parsed, out _);
+            if (!resumingNavigation && !resumingDispatch &&
+                (parsed.Revision != state.Revision || !state.AllowsCallback(parsed.Route) || !itemValid))
             {
                 await sender.AnswerCallbackAsync(callback!.Id, "This screen expired or changed. Use /start.", ct);
                 return TelegramDispatchResult.Handled;
             }
+            if (parsed.ButtonKey is not null && state.TryResolveItem(parsed, out var selected)) itemId = selected;
             route = parsed.Route;
         }
         else
@@ -81,9 +93,28 @@ public sealed class TelegramUpdateDispatcher
                     !string.Equals(command[1], options.BotUsername, StringComparison.OrdinalIgnoreCase)))
                     return TelegramDispatchResult.Ignored;
                 route = command[0];
-                if (route is "cancel" or "back") route = "start";
             }
             else route = state.Step;
+        }
+
+        if (resumingDispatch)
+        {
+            route = state.PendingDispatch!.Value.Route;
+            itemId = state.PendingDispatch.Value.ItemId;
+        }
+
+        var navigating = resumingNavigation || route is "back" or "cancel" or "start";
+        if (navigating)
+        {
+            if (callback is not null) await sender.AnswerCallbackAsync(callback.Id, cancellationToken: ct);
+            if (!resumingNavigation)
+            {
+                if (route == "back") state.GoBack(states.UtcNow);
+                else state.Reset(states.UtcNow);
+                if (!handlers.ContainsKey(state.Step)) state.Reset(states.UtcNow);
+                state.PendingNavigation = (deliveryKey, state.Step);
+            }
+            route = state.PendingNavigation!.Value.Route;
         }
 
         if (!handlers.TryGetValue(route, out var handler))
@@ -93,12 +124,16 @@ public sealed class TelegramUpdateDispatcher
             return TelegramDispatchResult.Handled;
         }
         // Clear the button spinner before feature processing. Retryable errors still propagate.
-        if (callback is not null) await sender.AnswerCallbackAsync(callback.Id, cancellationToken: ct);
+        if (callback is not null && !navigating) await sender.AnswerCallbackAsync(callback.Id, cancellationToken: ct);
+        var handlerStarted = false;
         try
         {
             var caller = await actors.ResolveAsync(telegramUser, ct);
+            if (!navigating) state.PendingDispatch = (deliveryKey, route, itemId);
+            handlerStarted = true;
             await handler.HandleAsync(new TelegramHandlerContext(caller, chat.Id,
-                update.Message?.Text, parsed, state), ct);
+                navigating ? null : update.Message?.Text, navigating ? null : parsed, state,
+                navigating ? null : itemId, navigating, resumingDispatch), ct);
         }
         catch (AppException error)
         {
@@ -108,6 +143,16 @@ public sealed class TelegramUpdateDispatcher
                 : "This action could not be completed. Use /start to return to the menu.";
             await sender.SendTextAsync(chat.Id, message, ct);
         }
+        catch when (handlerStarted)
+        {
+            // A handler may reset state while entering a flow. Retain only this exact delivery's
+            // trusted routing information so retry can redraw without repeating its transition.
+            if (navigating) state.PendingNavigation = (deliveryKey, route);
+            else state.PendingDispatch = (deliveryKey, route, itemId);
+            throw;
+        }
+        if (navigating) state.PendingNavigation = null;
+        state.PendingDispatch = null;
         return TelegramDispatchResult.Handled;
     }
 }

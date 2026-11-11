@@ -70,6 +70,9 @@ public static class ErrorCodes
 
     public const string InvalidBookingTime =
         "booking.invalid_time";
+    
+    public const string InvalidLocalTime =
+        "booking.invalid_local_time";
 
     public const string OfferingChanged =
         "booking.offering_changed";

@@ -1,7 +1,9 @@
 using AppointmentBooking.Application.Abstractions;
 using AppointmentBooking.Domain.Entities;
+using AppointmentBooking.Domain.Enums;
 using AppointmentBooking.Infrastructure.Persistence;
 using AppointmentBooking.Infrastructure.Repositories;
+using AppointmentBooking.Infrastructure.Time;
 using AppointmentBooking.Infrastructure.Transactions;
 using AppointmentBooking.IntegrationTests.Fixtures;
 using Microsoft.EntityFrameworkCore;
@@ -85,7 +87,7 @@ public sealed class BookingConcurrencyTests(PostgresFixture fixture)
         db.Bookings.AddRange(overlapping, nonOverlapping, cancelled);
         await db.SaveChangesAsync();
 
-        var repository = new BookingRepository(db);
+        var repository = new BookingRepository(db, new SystemClock());
         var overlaps = await repository.GetConfirmedOverlappingAsync(
             seed.StaffId, now.AddHours(1).AddMinutes(15), now.AddHours(1).AddMinutes(45), CancellationToken.None);
         var future = await repository.GetFutureConfirmedAsync(
@@ -95,10 +97,74 @@ public sealed class BookingConcurrencyTests(PostgresFixture fixture)
         Assert.Equal([nonOverlapping.Id], future.Select(booking => booking.Id));
     }
 
+    [Fact]
+    public async Task ConcurrentCancellationsReturnThePersistedResult()
+    {
+        var now = DateTime.UtcNow;
+        Guid bookingId;
+        Guid clientId;
+        await using (var setup = fixture.CreateContext())
+        {
+            var seed = AddBookingDependencies(setup);
+            var booking = new Booking(
+                seed.ClientId, seed.StaffId, seed.StaffServiceId, Guid.NewGuid(),
+                now.AddHours(1), 25m, 30, now);
+            setup.Bookings.Add(booking);
+            await setup.SaveChangesAsync();
+            bookingId = booking.Id;
+            clientId = seed.ClientId;
+        }
+
+        await using var first = fixture.CreateContext();
+        await using var second = fixture.CreateContext();
+        var firstTask = new BookingRepository(first, new SystemClock())
+            .Cancel(clientId, bookingId, CancellationToken.None);
+        var secondTask = new BookingRepository(second, new SystemClock())
+            .Cancel(clientId, bookingId, CancellationToken.None);
+
+        var results = await Task.WhenAll(firstTask, secondTask);
+
+        Assert.NotNull(results[0]);
+        Assert.Equal(results[0], results[1]);
+        Assert.Equal(BookingStatus.Cancelled, results[0]!.Status);
+    }
+
+    [Fact]
+    public async Task ConcurrentCompletionsReturnThePersistedResult()
+    {
+        var now = DateTime.UtcNow;
+        Guid bookingId;
+        Guid staffId;
+        await using (var setup = fixture.CreateContext())
+        {
+            var seed = AddBookingDependencies(setup);
+            var booking = new Booking(
+                seed.ClientId, seed.StaffId, seed.StaffServiceId, Guid.NewGuid(),
+                now.AddHours(-2), 25m, 30, now.AddHours(-3));
+            setup.Bookings.Add(booking);
+            await setup.SaveChangesAsync();
+            bookingId = booking.Id;
+            staffId = seed.StaffId;
+        }
+
+        await using var first = fixture.CreateContext();
+        await using var second = fixture.CreateContext();
+        var firstTask = new BookingRepository(first, new SystemClock())
+            .Complete(staffId, bookingId, CancellationToken.None);
+        var secondTask = new BookingRepository(second, new SystemClock())
+            .Complete(staffId, bookingId, CancellationToken.None);
+
+        var results = await Task.WhenAll(firstTask, secondTask);
+
+        Assert.NotNull(results[0]);
+        Assert.Equal(results[0], results[1]);
+        Assert.Equal(BookingStatus.Completed, results[0]!.Status);
+    }
+
     private static async Task AssertBlockedAsync(Task acquireTask)
     {
         var completed = await Task.WhenAny(acquireTask, Task.Delay(250));
-        Assert.NotSame(acquireTask, completed);
+        Assert.NotSame(acquireTask, completed); 
     }
 
     private static Seed AddBookingDependencies(AppDbContext db)

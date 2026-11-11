@@ -14,6 +14,7 @@ public sealed record CreateBookingRequest(
     int ExpectedDurationMinutes
     );
 
+// DTO for returning supplying booking information to the client. This is a read-only representation of a booking.
 public sealed record BookingOffering(
     Guid Id,
     Guid StaffMemberId,
@@ -24,6 +25,7 @@ public sealed record BookingOffering(
     bool IsServiceActive
 );
 
+// DTO for returning booking information to the client. This is a read-only representation of a booking.
 public sealed record BookingDto(
     Guid Id,
     Guid StaffServiceId,
@@ -34,3 +36,4 @@ public sealed record BookingDto(
     DateTime EndAtUtc,
     BookingStatus Status
     );
+

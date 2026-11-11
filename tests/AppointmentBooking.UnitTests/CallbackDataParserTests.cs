@@ -36,4 +36,26 @@ public sealed class CallbackDataParserTests
     {
         Assert.False(CallbackDataParser.TryParse(new string('ա', 40), out _));
     }
+
+    [Fact]
+    public void ItemCallbackRoundTripsAtExactly64Bytes()
+    {
+        var revision = Guid.NewGuid();
+        var data = CallbackDataParser.FormatItem("abcdefghijklmnopqrst", revision, "aB12_-34");
+        Assert.Equal(64, Encoding.UTF8.GetByteCount(data));
+        Assert.True(CallbackDataParser.TryParse(data, out var parsed));
+        Assert.Equal(new TelegramCallback("abcdefghijklmnopqrst", revision, "aB12_-34"), parsed);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("123456789")]
+    [InlineData("../id")]
+    [InlineData("item:id")]
+    public void InvalidItemKeysAreRejected(string key)
+    {
+        var revision = Guid.NewGuid();
+        Assert.Throws<ArgumentException>(() => CallbackDataParser.FormatItem("staff", revision, key));
+        Assert.False(CallbackDataParser.TryParse($"2:{revision:N}:staff:{key}", out _));
+    }
 }

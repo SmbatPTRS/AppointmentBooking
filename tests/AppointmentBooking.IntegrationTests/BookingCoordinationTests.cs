@@ -47,7 +47,7 @@ public sealed class BookingCoordinationTests
         await ownerDb.SaveChangesAsync(ct);
 
         var catalog = new CatalogRepository(bookingDb);
-        var bookings = new BookingRepository(bookingDb);
+        var bookings = new BookingRepository(bookingDb, clock);
         var availability = new AvailabilityService(catalog, new StaffRepository(bookingDb),
             new ScheduleRepository(bookingDb), new BusinessSettingsRepository(bookingDb), bookings,
             clock, new AvailabilityCalculator(new BookingOptions()));
@@ -55,7 +55,8 @@ public sealed class BookingCoordinationTests
         await using var provider = new ServiceCollection().BuildServiceProvider();
         var bookingLock = new PausingLock(new PostgresStaffOperationLock(bookingDb));
         var bookingService = new BookingService(bookings, provider.GetRequiredService<IServiceScopeFactory>(),
-            catalog, bookingDb, bookingLock, availability, clock, new BookingCoordinationRepository(bookingDb));
+            access, catalog, bookingDb, bookingLock, availability, clock, new BookingCoordinationRepository(bookingDb),
+            new BusinessSettingsRepository(bookingDb));
         var request = new CreateBookingRequest(Guid.NewGuid(), user.Id, offering.Id,
             clock.UtcNow.AddHours(2), 25m, 30);
 
@@ -74,7 +75,7 @@ public sealed class BookingCoordinationTests
             else
             {
                 var settings = new BusinessSettingsService(access, new BusinessSettingsRepository(ownerDb),
-                    new BookingRepository(ownerDb), ownerCoordination, ownerDb);
+                    new BookingRepository(ownerDb, clock), ownerCoordination, ownerDb);
                 await settings.UpdateTimeZoneAndCurrencyAsync(actor, "UTC", "USD", ct);
             }
         }
