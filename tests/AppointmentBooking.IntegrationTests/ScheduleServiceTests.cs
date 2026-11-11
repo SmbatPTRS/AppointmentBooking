@@ -297,7 +297,7 @@ public sealed class ScheduleServiceTests(PostgresFixture fixture)
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
         var sut = new ScheduleService(new Access(false), new ScheduleRepository(db),
-            new BookingRepository(db), new BusinessSettingsRepository(db), db,
+            new BookingRepository(db, new Clock()), new BusinessSettingsRepository(db), db,
             new PostgresStaffOperationLock(db), clock, new ScheduleChangeValidator());
         Assert.Equal(configured ? expected : null, await sut.GetHoursAsync(new Actor(user.Id), staff.Id, default));
         Assert.Empty(db.ChangeTracker.Entries());
@@ -308,7 +308,7 @@ public sealed class ScheduleServiceTests(PostgresFixture fixture)
     {
         await using var db = fixture.CreateContext();
         var sut = new ScheduleService(new Access(true), new ScheduleRepository(db),
-            new BookingRepository(db), new BusinessSettingsRepository(db), db,
+            new BookingRepository(db, new Clock()), new BusinessSettingsRepository(db), db,
             new PostgresStaffOperationLock(db), new Clock(), new ScheduleChangeValidator());
         var actor = new Actor(Guid.NewGuid());
         var staffId = Guid.NewGuid();
@@ -337,7 +337,7 @@ public sealed class ScheduleServiceTests(PostgresFixture fixture)
         await db.SaveChangesAsync();
         var actor = new Actor(user.Id);
         var sut = new ScheduleService(new Access(false), new ScheduleRepository(db),
-            new BookingRepository(db), new BusinessSettingsRepository(db), db,
+            new BookingRepository(db, new Clock()), new BusinessSettingsRepository(db), db,
             new PostgresStaffOperationLock(db), clock, new ScheduleChangeValidator());
         Assert.Null(await sut.GetHoursAsync(actor, staff.Id, default));
         var first = new WorkingHoursModel(new(9, 0), new(18, 0), new(12, 0), new(13, 0));
@@ -367,7 +367,7 @@ public sealed class ScheduleServiceTests(PostgresFixture fixture)
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
         var sut = new ScheduleService(new Access(false), new ScheduleRepository(db),
-            new BookingRepository(db), new BusinessSettingsRepository(db), db,
+            new BookingRepository(db, new Clock()), new BusinessSettingsRepository(db), db,
             new PostgresStaffOperationLock(db), clock, new ScheduleChangeValidator());
         var actor = new Actor(user.Id);
         Assert.Equal(ownDay.Id, Assert.Single(await sut.ListDaysOffAsync(actor, staff.Id, default)).Id);
@@ -401,7 +401,7 @@ public sealed class ScheduleServiceTests(PostgresFixture fixture)
         await using var editor = fixture.CreateContext();
         var observed = new ObservedLock(new PostgresStaffOperationLock(editor));
         var sut = new ScheduleService(new Access(false), new ScheduleRepository(editor),
-            new BookingRepository(editor), new BusinessSettingsRepository(editor), editor,
+            new BookingRepository(editor, new Clock()), new BusinessSettingsRepository(editor), editor,
             observed, clock, new ScheduleChangeValidator());
         Task edit = dayOff
             ? sut.AddDayOffAsync(new Actor(user.Id), staff.Id, new DayOffModel(DayOfWeek.Monday), cancellation.Token)
