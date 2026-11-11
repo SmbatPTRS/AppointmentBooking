@@ -112,10 +112,22 @@ public sealed class BookingService
         if (booking is null || booking.ClientUserId != clientUserId)
             return null;
 
-        var dto = await _bookings.Cancel(clientUserId, bookingId, ct);
+        BookingDto? dto;
+        try
+        {
+            dto = await _bookings.Cancel(clientUserId, bookingId, ct);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new AppException(
+                ErrorCodes.BookingCannotBeCancelled,
+                ex.Message,
+                AppErrorKind.Conflict);
+        }
+
         if (dto is null)
             return null;
-        
+
         return dto;
     }
     
@@ -129,15 +141,28 @@ public sealed class BookingService
             return null;
 
         var staffMemberId = booking.StaffMemberId;
-        await _access.RequireStaffManagementAsync(actor, staffMemberId, ct);
+        await _access.RequireAppointmentManagementAsync(actor, staffMemberId, ct);
 
-        var dto = await _bookings.Complete(staffMemberId, bookingId, ct);
+        BookingDto? dto;
+        try
+        {
+            dto = await _bookings.Complete(staffMemberId, bookingId, ct);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new AppException(
+                ErrorCodes.BookingCannotBeCompleted,
+                ex.Message,
+                AppErrorKind.Conflict);
+        }
+
         if (dto is null)
             return null;
 
         return dto;
     }
     
+    /// <summary>List all bookings for a specific client.</summary>
     public async Task<IReadOnlyList<BookingDto>> ListBookingsByClientAsync(
         Actor actor, CancellationToken ct)
     {

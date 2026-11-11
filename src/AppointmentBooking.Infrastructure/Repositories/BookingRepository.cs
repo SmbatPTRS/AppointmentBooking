@@ -145,6 +145,10 @@ public sealed class BookingRepository(AppDbContext context, IClock clock) : IBoo
         if (booking.Status == BookingStatus.Confirmed)
         {
             var cancelledAtUtc = clock.UtcNow;
+            if (cancelledAtUtc >= booking.StartsAtUtc)
+                throw new InvalidOperationException(
+                    "A booking can only be cancelled before its start.");
+
             await context.Bookings
                 .Where(b => b.Id == bookingId &&
                             b.ClientUserId == clientUserId &&

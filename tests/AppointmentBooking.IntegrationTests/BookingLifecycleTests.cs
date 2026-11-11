@@ -23,13 +23,73 @@ public sealed class BookingLifecycleTests(PostgresFixture fixture)
         var actor = complete ? await GetStaffActorAsync(booking) : new Actor(booking.ClientUserId);
         var now = complete ? booking.EndsAtUtc : booking.StartsAtUtc.AddSeconds(-1);
 
-        Assert.Null(await TransitionAsync(seed, booking, stranger, now, complete));
+        if (complete)
+        {
+            var error = await Assert.ThrowsAsync<AppException>(() =>
+                TransitionAsync(seed, booking, stranger, now, true));
+            Assert.Equal(ErrorCodes.Unauthorized, error.Code);
+            Assert.Equal(AppErrorKind.Unauthorized, error.Kind);
+        }
+        else
+        {
+            Assert.Null(await TransitionAsync(seed, booking, stranger, now, false));
+        }
+
         Assert.Equal(BookingStatus.Confirmed, (await ReadBookingAsync(booking.Id)).Status);
 
         var changed = await TransitionAsync(seed, booking, actor, now, complete);
         Assert.NotNull(changed);
-        Assert.Null(await TransitionAsync(seed, booking, stranger, now.AddHours(1), complete));
+        if (complete)
+        {
+            var error = await Assert.ThrowsAsync<AppException>(() =>
+                TransitionAsync(seed, booking, stranger, now.AddHours(1), true));
+            Assert.Equal(ErrorCodes.Unauthorized, error.Code);
+            Assert.Equal(AppErrorKind.Unauthorized, error.Kind);
+        }
+        else
+        {
+            Assert.Null(await TransitionAsync(seed, booking, stranger, now.AddHours(1), false));
+        }
         Assert.Equal(changed.Status, (await ReadBookingAsync(booking.Id)).Status);
+    }
+
+    [Fact]
+    public async Task ExistingUnrelatedUserCannotCompleteBooking()
+    {
+        await using var seed = await BookingTestSetup.CreateAsync(fixture);
+        await using var otherSeed = await BookingTestSetup.CreateAsync(fixture);
+        var booking = await InsertBookingAsync(seed);
+        var unrelated = new Actor(otherSeed.Client.Id);
+
+        var error = await Assert.ThrowsAsync<AppException>(() =>
+            TransitionAsync(seed, booking, unrelated, booking.EndsAtUtc, true));
+
+        Assert.Equal(ErrorCodes.Forbidden, error.Code);
+        Assert.Equal(AppErrorKind.Forbidden, error.Kind);
+        Assert.Equal(BookingStatus.Confirmed, (await ReadBookingAsync(booking.Id)).Status);
+    }
+
+    [Fact]
+    public async Task DeactivatedEmployeeCanCompleteOwnAppointmentAfterItEnds()
+    {
+        await using var seed = await BookingTestSetup.CreateAsync(fixture);
+        var booking = await InsertBookingAsync(seed);
+        var staff = await GetStaffActorAsync(booking);
+
+        await using (var db = fixture.CreateContext())
+        {
+            var member = await db.StaffMembers
+                .SingleAsync(member => member.Id == booking.StaffMemberId);
+            member.Deactivate();
+            await db.SaveChangesAsync();
+        }
+
+        var completed = await TransitionAsync(
+            seed, booking, staff, booking.EndsAtUtc, complete: true);
+
+        Assert.NotNull(completed);
+        Assert.Equal(BookingStatus.Completed, completed.Status);
+        Assert.Equal(BookingStatus.Completed, (await ReadBookingAsync(booking.Id)).Status);
     }
 
     [Theory]
@@ -43,8 +103,20 @@ public sealed class BookingLifecycleTests(PostgresFixture fixture)
         var actor = complete ? await GetStaffActorAsync(booking) : new Actor(booking.ClientUserId);
         var boundary = complete ? booking.EndsAtUtc : booking.StartsAtUtc;
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            TransitionAsync(seed, booking, actor, boundary.AddSeconds(secondsFromBoundary), complete));
+        if (complete)
+        {
+            var error = await Assert.ThrowsAsync<AppException>(() =>
+                TransitionAsync(seed, booking, actor, boundary.AddSeconds(secondsFromBoundary), true));
+            Assert.Equal(ErrorCodes.BookingCannotBeCompleted, error.Code);
+            Assert.Equal(AppErrorKind.Conflict, error.Kind);
+        }
+        else
+        {
+            var error = await Assert.ThrowsAsync<AppException>(() =>
+                TransitionAsync(seed, booking, actor, boundary.AddSeconds(secondsFromBoundary), false));
+            Assert.Equal(ErrorCodes.BookingCannotBeCancelled, error.Code);
+            Assert.Equal(AppErrorKind.Conflict, error.Kind);
+        }
 
         var stored = await ReadBookingAsync(booking.Id);
         Assert.Equal(BookingStatus.Confirmed, stored.Status);
@@ -90,8 +162,20 @@ public sealed class BookingLifecycleTests(PostgresFixture fixture)
         var actor = complete ? await GetStaffActorAsync(booking) : new Actor(booking.ClientUserId);
         var now = complete ? booking.EndsAtUtc : booking.StartsAtUtc.AddSeconds(-1);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            TransitionAsync(seed, booking, actor, now, complete));
+        if (complete)
+        {
+            var error = await Assert.ThrowsAsync<AppException>(() =>
+                TransitionAsync(seed, booking, actor, now, true));
+            Assert.Equal(ErrorCodes.BookingCannotBeCompleted, error.Code);
+            Assert.Equal(AppErrorKind.Conflict, error.Kind);
+        }
+        else
+        {
+            var error = await Assert.ThrowsAsync<AppException>(() =>
+                TransitionAsync(seed, booking, actor, now, false));
+            Assert.Equal(ErrorCodes.BookingCannotBeCancelled, error.Code);
+            Assert.Equal(AppErrorKind.Conflict, error.Kind);
+        }
 
         Assert.Equal(status, (await ReadBookingAsync(booking.Id)).Status);
     }
