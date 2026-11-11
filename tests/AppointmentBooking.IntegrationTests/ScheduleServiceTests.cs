@@ -279,4 +279,149 @@ public sealed class ScheduleServiceTests(PostgresFixture fixture)
         Assert.Equal(day.Id, (await verification.StaffDaysOff.SingleAsync(d => d.StaffMemberId == staff.Id, ct)).Id);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReadHoursReturnsOnlyRequestedStaffScheduleOrNull(bool configured)
+    {
+        await using var db = fixture.CreateContext();
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var clock = new Clock();
+        var user = new User(Random.Shared.NextInt64(5000000000, 9000000000), "Read", null, clock.UtcNow);
+        var otherUser = new User(Random.Shared.NextInt64(5000000000, 9000000000), "Other", null, clock.UtcNow);
+        var staff = new StaffMember(user.Id, "Read");
+        var other = new StaffMember(otherUser.Id, "Other");
+        db.AddRange(user, otherUser, staff, other, new WorkingHours(other.Id, new(7, 0), new(20, 0)));
+        var expected = new WorkingHoursModel(new(9, 0), new(18, 0), new(12, 0), new(13, 0));
+        if (configured) db.Add(new WorkingHours(staff.Id, expected.OpensAt, expected.ClosesAt, expected.BreakStartsAt, expected.BreakEndsAt));
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        var sut = new ScheduleService(new Access(false), new ScheduleRepository(db),
+            new BookingRepository(db, new Clock()), new BusinessSettingsRepository(db), db,
+            new PostgresStaffOperationLock(db), clock, new ScheduleChangeValidator());
+        Assert.Equal(configured ? expected : null, await sut.GetHoursAsync(new Actor(user.Id), staff.Id, default));
+        Assert.Empty(db.ChangeTracker.Entries());
+    }
+
+    [Fact]
+    public async Task DeniedScheduleReadsAndRemovalPropagateAccessError()
+    {
+        await using var db = fixture.CreateContext();
+        var sut = new ScheduleService(new Access(true), new ScheduleRepository(db),
+            new BookingRepository(db, new Clock()), new BusinessSettingsRepository(db), db,
+            new PostgresStaffOperationLock(db), new Clock(), new ScheduleChangeValidator());
+        var actor = new Actor(Guid.NewGuid());
+        var staffId = Guid.NewGuid();
+        foreach (var operation in new Func<Task>[] {
+            () => sut.GetHoursAsync(actor, staffId, default),
+            () => sut.ListDaysOffAsync(actor, staffId, default),
+            () => sut.RemoveDayOffAsync(actor, staffId, Guid.NewGuid(), default) })
+        {
+            var error = await Assert.ThrowsAsync<AppException>(operation);
+            Assert.Equal(ErrorCodes.Forbidden, error.Code);
+            Assert.Equal(AppErrorKind.Forbidden, error.Kind);
+        }
+        Assert.Empty(db.ChangeTracker.Entries());
+        Assert.Null(db.Database.CurrentTransaction);
+    }
+    [Fact]
+    public async Task FirstHoursSaveCreatesOneRowAndLaterSaveUpdatesIt()
+    {
+        await using var db = fixture.CreateContext();
+        var clock = new Clock();
+        var user = new User(Random.Shared.NextInt64(5000000000, 9000000000), "First hours", null, clock.UtcNow);
+        var staff = new StaffMember(user.Id, "First hours");
+        db.AddRange(user, staff);
+        if (!await db.BusinessSettings.AnyAsync())
+            db.BusinessSettings.Add(new BusinessSettings("Studio", "Staff", "UTC", "AMD"));
+        await db.SaveChangesAsync();
+        var actor = new Actor(user.Id);
+        var sut = new ScheduleService(new Access(false), new ScheduleRepository(db),
+            new BookingRepository(db, new Clock()), new BusinessSettingsRepository(db), db,
+            new PostgresStaffOperationLock(db), clock, new ScheduleChangeValidator());
+        Assert.Null(await sut.GetHoursAsync(actor, staff.Id, default));
+        var first = new WorkingHoursModel(new(9, 0), new(18, 0), new(12, 0), new(13, 0));
+        await sut.SetHoursAsync(actor, staff.Id, first, default);
+        await using var observer = fixture.CreateContext();
+        var saved = await observer.WorkingHours.AsNoTracking().SingleAsync(h => h.StaffMemberId == staff.Id);
+        Assert.Equal(first, await new ScheduleRepository(observer).GetHoursAsync(staff.Id, default));
+        var updated = new WorkingHoursModel(new(10, 0), new(19, 0));
+        await sut.SetHoursAsync(actor, staff.Id, updated, default);
+        var after = await observer.WorkingHours.AsNoTracking().SingleAsync(h => h.StaffMemberId == staff.Id);
+        Assert.Equal(saved.Id, after.Id);
+        Assert.Equal(updated, await new ScheduleRepository(observer).GetHoursAsync(staff.Id, default));
+    }
+
+    [Fact]
+    public async Task RemovalCannotDeleteAnotherEmployeesDayOff()
+    {
+        await using var db = fixture.CreateContext();
+        var clock = new Clock();
+        var user = new User(Random.Shared.NextInt64(5000000000, 9000000000), "First", null, clock.UtcNow);
+        var otherUser = new User(Random.Shared.NextInt64(5000000000, 9000000000), "Second", null, clock.UtcNow);
+        var staff = new StaffMember(user.Id, "First");
+        var other = new StaffMember(otherUser.Id, "Second");
+        var ownDay = new StaffDayOff(staff.Id, DayOfWeek.Monday, null);
+        var foreignDay = new StaffDayOff(other.Id, DayOfWeek.Monday, null);
+        db.AddRange(user, otherUser, staff, other, ownDay, foreignDay);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        var sut = new ScheduleService(new Access(false), new ScheduleRepository(db),
+            new BookingRepository(db, new Clock()), new BusinessSettingsRepository(db), db,
+            new PostgresStaffOperationLock(db), clock, new ScheduleChangeValidator());
+        var actor = new Actor(user.Id);
+        Assert.Equal(ownDay.Id, Assert.Single(await sut.ListDaysOffAsync(actor, staff.Id, default)).Id);
+        var error = await Assert.ThrowsAsync<AppException>(() => sut.RemoveDayOffAsync(actor, staff.Id, foreignDay.Id, default));
+        Assert.Equal(ErrorCodes.DayOffNotFound, error.Code);
+        Assert.Equal(AppErrorKind.NotFound, error.Kind);
+        Assert.Null(db.Database.CurrentTransaction);
+        await using var observer = fixture.CreateContext();
+        Assert.True(await observer.StaffDaysOff.AnyAsync(d => d.Id == ownDay.Id));
+        Assert.True(await observer.StaffDaysOff.AnyAsync(d => d.Id == foreignDay.Id));
+        await sut.RemoveDayOffAsync(actor, staff.Id, ownDay.Id, default);
+        Assert.False(await observer.StaffDaysOff.AnyAsync(d => d.Id == ownDay.Id));
+        Assert.True(await observer.StaffDaysOff.AnyAsync(d => d.Id == foreignDay.Id));
+    }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CancellationWhileWaitingForLockRollsBackWithoutScheduleChanges(bool dayOff)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
+        var ct = timeout.Token;
+        await using var writer = fixture.CreateContext();
+        var clock = new Clock();
+        var user = new User(Random.Shared.NextInt64(5000000000, 9000000000), "Cancel", null, clock.UtcNow);
+        var staff = new StaffMember(user.Id, "Cancel");
+        writer.AddRange(user, staff, new WorkingHours(staff.Id, new(9, 0), new(18, 0)));
+        await writer.SaveChangesAsync(ct);
+        await using var transaction = await writer.BeginTransactionAsync(ct);
+        await new PostgresStaffOperationLock(writer).AcquireAsync(staff.Id, ct);
+        await using var editor = fixture.CreateContext();
+        var observed = new ObservedLock(new PostgresStaffOperationLock(editor));
+        var sut = new ScheduleService(new Access(false), new ScheduleRepository(editor),
+            new BookingRepository(editor, new Clock()), new BusinessSettingsRepository(editor), editor,
+            observed, clock, new ScheduleChangeValidator());
+        Task edit = dayOff
+            ? sut.AddDayOffAsync(new Actor(user.Id), staff.Id, new DayOffModel(DayOfWeek.Monday), cancellation.Token)
+            : sut.SetHoursAsync(new Actor(user.Id), staff.Id, new WorkingHoursModel(new(10, 0), new(17, 0)), cancellation.Token);
+        await observed.Entered.Task.WaitAsync(ct);
+        while (!await writer.Database.SqlQueryRaw<bool>(
+            "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND NOT granted) AS \"Value\"")
+            .SingleAsync(ct))
+        {
+            if (edit.IsCompleted) throw new InvalidOperationException("Schedule edit did not wait for the employee lock.");
+            await Task.Delay(10, ct);
+        }
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => edit.WaitAsync(ct));
+        Assert.False(timeout.IsCancellationRequested);
+        Assert.Null(editor.Database.CurrentTransaction);
+        await using var observer = fixture.CreateContext();
+        var hours = await observer.WorkingHours.SingleAsync(h => h.StaffMemberId == staff.Id, ct);
+        Assert.Equal(new TimeOnly(9, 0), hours.OpensAt);
+        Assert.Equal(new TimeOnly(18, 0), hours.ClosesAt);
+        Assert.False(await observer.StaffDaysOff.AnyAsync(d => d.StaffMemberId == staff.Id, ct));
+    }
 }

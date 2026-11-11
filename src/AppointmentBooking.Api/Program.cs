@@ -48,6 +48,9 @@ builder.Services.AddScoped<IStaffRepository, StaffRepository>();
 builder.Services.AddScoped<IBusinessSettingsRepository, BusinessSettingsRepository>();
 builder.Services.AddScoped(provider => new AvailabilityCalculator(provider.GetRequiredService<IOptions<BookingOptions>>().Value));
 builder.Services.AddScoped<AvailabilityService>();
+// Member B: schedule operations share the existing scoped repositories and lock.
+builder.Services.AddScoped<AppointmentBooking.Application.Scheduling.ScheduleChangeValidator>();
+builder.Services.AddScoped<AppointmentBooking.Application.Scheduling.ScheduleService>();
 builder.Services.AddScoped<BookingService>();
 builder.Services.AddScoped<BusinessSettingsService>();
 builder.Services.AddScoped<StaffManagementService>();
