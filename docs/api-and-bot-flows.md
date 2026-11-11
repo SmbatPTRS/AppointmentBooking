@@ -112,6 +112,9 @@ Client flow: /start -> employee -> service -> date -> available time -> review
 price/duration -> confirm -> committed booking details.
 Generate RequestId when preparing a confirmation; retries reuse it. New selections
 create a new confirmation. Old/expired/other-user buttons cannot bypass validation.
+Automated acceptance coverage verifies authenticated client history and cancellation
+through HTTP, plus Telegram selection restoration, displayed-value retention,
+request identity replacement, and cancellation reset behavior.
 
 My bookings supports viewing and eligible cancellation. Staff views appointments
 by business-local date. Owner management adds/deactivates employees and edits settings.
