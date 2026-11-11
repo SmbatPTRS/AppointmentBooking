@@ -54,7 +54,10 @@ public sealed class BookingHandler(
             return;
         }
 
-        switch (context.State.Step)
+        var step = context.IsRetry && context.Callback is not null
+            ? context.Callback.Route
+            : context.State.Step;
+        switch (step)
         {
             case "book.staff": await HandleBookingStaffAsync(context, ct); break;
             case "book.service": await HandleBookingServiceAsync(context, ct); break;
@@ -180,6 +183,11 @@ public sealed class BookingHandler(
     private async Task HandleConfirmationAsync(TelegramHandlerContext context, CancellationToken ct)
     {
         if (context.IsNavigation) { await RenderConfirmationAsync(context, ct); return; }
+        if (context.Callback?.Route != "book.confirm")
+        {
+            await RenderConfirmationAsync(context, ct);
+            return;
+        }
         var draft = GetDraft(context) ?? throw InvalidDraft();
         if (draft.OfferingId is not Guid offeringId || draft.Slot is null) throw InvalidDraft();
         context.State.ConfirmationRequestId ??= Guid.NewGuid();
@@ -246,7 +254,7 @@ public sealed class BookingHandler(
 
     private async Task RenderAppointmentStaffAsync(TelegramHandlerContext context, CancellationToken ct)
     {
-        var people = await staff.BrowseAsync(context.Caller.Actor, false, ct);
+        var people = await staff.BrowseForAppointmentsAsync(context.Caller.Actor, ct);
         var buttons = BookingKeyboard.Items(context.State, people, x => x.DisplayName, x => x.Id, "appointments.staff");
         await sender.SendMenuAsync(context.ChatId, "Choose an employee:", buttons, ct);
     }
