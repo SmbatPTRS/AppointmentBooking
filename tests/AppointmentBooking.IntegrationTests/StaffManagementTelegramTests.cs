@@ -15,6 +15,9 @@ namespace AppointmentBooking.IntegrationTests;
 [Collection(PostgresCollection.Name)]
 public sealed class StaffManagementTelegramTests(PostgresFixture fixture)
 {
+    private static bool HasRoute(TelegramMenuButton button, string route) =>
+        CallbackDataParser.TryParse(button.CallbackData, out var callback) && callback!.Route == route;
+
     [Fact]
     public async Task OwnerListsAllStaffWhileOtherRolesAreDeniedAndNavigationRemainsUsable()
     {
@@ -35,6 +38,14 @@ public sealed class StaffManagementTelegramTests(PostgresFixture fixture)
                 var user = new AppUser(9_050_000_100 + index, "List employee", null, DateTime.UtcNow);
                 db.Users.Add(user);
                 db.StaffMembers.Add(new StaffMember(user.Id, $"Task05 employee {index}"));
+            }
+            // Exercise names that can also appear on navigation buttons.
+            var collisionNames = new[] { "Cancel", "Back", "Next page", "Previous page", "Add employee" };
+            for (var index = 0; index < collisionNames.Length; index++)
+            {
+                var user = new AppUser(9_050_000_200 + index, "Navigation test account", null, DateTime.UtcNow);
+                db.Users.Add(user);
+                db.StaffMembers.Add(new StaffMember(user.Id, collisionNames[index]));
             }
             await db.SaveChangesAsync();
         }
@@ -68,8 +79,8 @@ public sealed class StaffManagementTelegramTests(PostgresFixture fixture)
         var open = sender.SentMenus.Last().Buttons.Single(button => button.Text == "Staff management");
         var listStart = sender.SentMenus.Count;
         await Dispatch(Click(open.CallbackData));
-        while (sender.SentMenus.Last().Buttons.Any(button => button.Text == "Next page"))
-            await Dispatch(Click(sender.SentMenus.Last().Buttons.Single(button => button.Text == "Next page").CallbackData));
+        while (sender.SentMenus.Last().Buttons.Any(button => button.Text == "Next page" && HasRoute(button, "staff")))
+            await Dispatch(Click(sender.SentMenus.Last().Buttons.Single(button => button.Text == "Next page" && HasRoute(button, "staff")).CallbackData));
         var lists = sender.SentMenus.Skip(listStart).ToArray();
         Assert.True(lists.Length >= 2);
         var text = string.Join("\n", lists.Select(menu => menu.Text));
@@ -79,7 +90,7 @@ public sealed class StaffManagementTelegramTests(PostgresFixture fixture)
 
         await Dispatch(TelegramFoundationTests.Message("/staff", ownerId, ownerId));
         while (!sender.SentMenus.Last().Buttons.Any(button => button.Text == "Task05 inactive employee"))
-            await Dispatch(Click(sender.SentMenus.Last().Buttons.Single(button => button.Text == "Next page").CallbackData));
+            await Dispatch(Click(sender.SentMenus.Last().Buttons.Single(button => button.Text == "Next page" && HasRoute(button, "staff")).CallbackData));
         var lastPageText = sender.SentMenus.Last().Text;
         var employeeButton = sender.SentMenus.Last().Buttons.Single(button => button.Text == "Task05 inactive employee");
         var menuCountBeforeForgery = sender.SentMenus.Count;
@@ -104,15 +115,15 @@ public sealed class StaffManagementTelegramTests(PostgresFixture fixture)
         Assert.Contains("Status — Inactive", sender.SentMenus.Last().Text);
         await Dispatch(TelegramFoundationTests.Message("unexpected input", ownerId, ownerId));
         Assert.Contains("Task05 inactive employee", sender.SentMenus.Last().Text);
-        await Dispatch(Click(sender.SentMenus.Last().Buttons.Single(button => button.Text == "Back").CallbackData));
+        await Dispatch(Click(sender.SentMenus.Last().Buttons.Single(button => HasRoute(button, "back")).CallbackData));
         Assert.Equal(lastPageText, sender.SentMenus.Last().Text);
         var beforeOldSelection = sender.SentMenus.Count;
         await Dispatch(Click(employeeButton.CallbackData));
         Assert.Equal(beforeOldSelection, sender.SentMenus.Count);
         Assert.Contains("expired", sender.CallbackAnswers.Last().Text);
-        await Dispatch(Click(sender.SentMenus.Last().Buttons.Single(button => button.Text == "Previous page").CallbackData));
+        await Dispatch(Click(sender.SentMenus.Last().Buttons.Single(button => button.Text == "Previous page" && HasRoute(button, "staff")).CallbackData));
         while (!sender.SentMenus.Last().Buttons.Any(button => button.Text == "Task05 active employee"))
-            await Dispatch(Click(sender.SentMenus.Last().Buttons.Single(button => button.Text == "Previous page").CallbackData));
+            await Dispatch(Click(sender.SentMenus.Last().Buttons.Single(button => button.Text == "Previous page" && HasRoute(button, "staff")).CallbackData));
         await Dispatch(Click(sender.SentMenus.Last().Buttons.Single(button => button.Text == "Task05 active employee").CallbackData));
         Assert.Contains("Status — Active", sender.SentMenus.Last().Text);
         var renameButton = sender.SentMenus.Last().Buttons.Single(button => button.Text == "Rename").CallbackData;
@@ -126,7 +137,7 @@ public sealed class StaffManagementTelegramTests(PostgresFixture fixture)
             Assert.Equal("Task05 active employee", (await db.StaffMembers
                 .SingleAsync(profile => db.Users.Any(user => user.Id == profile.UserId && user.TelegramUserId == employeeId))).DisplayName);
         }
-        await Dispatch(Click(sender.SentMenus.Last().Buttons.Single(button => button.Text == "Back").CallbackData));
+        await Dispatch(Click(sender.SentMenus.Last().Buttons.Single(button => HasRoute(button, "back")).CallbackData));
         Assert.Contains("Name — Task05 active employee", sender.SentMenus.Last().Text);
         var menusBeforeStaleRename = sender.SentMenus.Count;
         await Dispatch(Click(renameButton));
@@ -154,14 +165,14 @@ public sealed class StaffManagementTelegramTests(PostgresFixture fixture)
         await using (var db = fixture.CreateContext())
             Assert.Equal("Task05 later rename", (await db.StaffMembers
                 .SingleAsync(profile => db.Users.Any(user => user.Id == profile.UserId && user.TelegramUserId == employeeId))).DisplayName);
-        await Dispatch(Click(sender.SentMenus.Last().Buttons.Single(button => button.Text == "Back").CallbackData));
+        await Dispatch(Click(sender.SentMenus.Last().Buttons.Single(button => HasRoute(button, "back")).CallbackData));
         Assert.Contains("Name — Task05 later rename", sender.SentMenus.Last().Text);
         await Dispatch(Click(sender.SentMenus.Last().Buttons.Single(button => button.Text == "Rename").CallbackData));
-        await Dispatch(Click(sender.SentMenus.Last().Buttons.Single(button => button.Text == "Cancel").CallbackData));
+        await Dispatch(Click(sender.SentMenus.Last().Buttons.Single(button => HasRoute(button, "cancel")).CallbackData));
         Assert.Contains("Welcome", sender.SentMenus.Last().Text);
         await Dispatch(TelegramFoundationTests.Message("/staff", ownerId, ownerId));
 
-        var oldBack = sender.SentMenus.Last().Buttons.Single(button => button.Text == "Back").CallbackData;
+        var oldBack = sender.SentMenus.Last().Buttons.Single(button => HasRoute(button, "back")).CallbackData;
         await Dispatch(Click(oldBack));
         Assert.Contains("Welcome", sender.SentMenus.Last().Text);
         var menuCount = sender.SentMenus.Count;
@@ -178,7 +189,7 @@ public sealed class StaffManagementTelegramTests(PostgresFixture fixture)
             await Assert.ThrowsAsync<HttpRequestException>(() => dispatcher.DispatchAsync(retry));
             await dispatcher.DispatchAsync(retry);
         }
-        await Dispatch(Click(sender.SentMenus.Last().Buttons.Single(button => button.Text == "Cancel").CallbackData));
+        await Dispatch(Click(sender.SentMenus.Last().Buttons.Single(button => HasRoute(button, "cancel")).CallbackData));
         Assert.Contains("Welcome", sender.SentMenus.Last().Text);
         using (var lease = await configured.Services.GetRequiredService<ConversationStateStore>()
                    .AcquireAsync(new(ownerId, ownerId)))
@@ -254,7 +265,8 @@ public sealed class StaffManagementTelegramTests(PostgresFixture fixture)
         {
             await Send(TelegramFoundationTests.Message("/staff", ownerId, ownerId));
             while (!sender.SentMenus.Last().Buttons.Any(button => button.Text == "Task05 activation employee"))
-                await Send(Click(Button("Next page")));
+                await Send(Click(sender.SentMenus.Last().Buttons.Single(button =>
+                    button.Text == "Next page" && HasRoute(button, "staff")).CallbackData));
             await Send(Click(Button("Task05 activation employee")));
         }
         async Task AssertStatus(bool active, long version)
@@ -394,7 +406,7 @@ public sealed class StaffManagementTelegramTests(PostgresFixture fixture)
         async Task OpenAdd()
         {
             await Text("/staff");
-            await Send(Click(Button("Add employee")));
+            await Send(Click(sender.SentMenus.Last().Buttons.Single(button => HasRoute(button, "staff.add")).CallbackData));
         }
         async Task AssertNoCandidateProfile()
         {
