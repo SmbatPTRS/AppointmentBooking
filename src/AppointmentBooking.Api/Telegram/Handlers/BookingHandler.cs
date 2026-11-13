@@ -53,21 +53,33 @@ public sealed class BookingHandler(
             await RenderStaffAsync(context, ct);
             return;
         }
+        
+        var step = context.State.Step;
 
-        var step = context.IsRetry && context.Callback is not null
-            ? context.Callback.Route
-            : context.State.Step;
-        switch (step)
+        if (context.IsRetry &&
+            context.Callback is not null &&
+            !string.Equals(context.Callback.Route, step, StringComparison.Ordinal))
         {
-            case "book.staff": await HandleBookingStaffAsync(context, ct); break;
-            case "book.service": await HandleBookingServiceAsync(context, ct); break;
-            case "book.date": await HandleBookingDateAsync(context, ct); break;
-            case "book.time": await HandleBookingTimeAsync(context, ct); break;
-            case "book.confirm": await HandleConfirmationAsync(context, ct); break;
-            default:
-                context.State.EnterFlow("book.staff", clock.UtcNow);
-                await RenderStaffAsync(context, ct);
-                break;
+            switch (step)
+            {
+                case "book.staff":
+                    await RenderStaffAsync(context, ct);
+                    break;
+                case "book.service":
+                    await RenderServicesAsync(context, ct);
+                    break;
+                case "book.date":
+                    await RenderDateAsync(context, ct);
+                    break;
+                case "book.time":
+                    await RenderTimesAsync(context, ct);
+                    break;
+                case "book.confirm":
+                    await RenderConfirmationAsync(context, ct);
+                    break;
+            }
+
+            return;
         }
     }
 
