@@ -91,7 +91,11 @@ public sealed class StaffManagementTests(PostgresFixture fixture)
         await using var db = fixture.CreateContext();
         var ownerUser = new User(8_000_000_006, "Owner", null, DateTime.UtcNow);
         var employeeUser = new User(8_000_000_007, "Staff user", null, DateTime.UtcNow);
-        db.Users.AddRange(ownerUser, employeeUser);
+        var otherEmployeeUser = new User(
+            Random.Shared.NextInt64(10_000_000_000, 90_000_000_000),
+            "Other staff user", null, DateTime.UtcNow);
+
+        db.Users.AddRange(ownerUser, employeeUser, otherEmployeeUser);
         await db.SaveChangesAsync();
 
         var owner = new Actor(ownerUser.Id);
@@ -100,12 +104,19 @@ public sealed class StaffManagementTests(PostgresFixture fixture)
         var service = new StaffManagementService(access, new UserRepository(db),
             new StaffRepository(db), new BookingCoordinationRepository(db),
             new PostgresStaffOperationLock(db), db);
+
         var own = await service.CreateAsync(owner, employeeUser.Id, "Inactive staff");
         await service.SetActiveAsync(owner, own.Id, false);
 
-        var listed = await service.BrowseForAppointmentsAsync(employee);
+        var other = await service.CreateAsync(owner, otherEmployeeUser.Id, "Other inactive staff");
+        await service.SetActiveAsync(owner, other.Id, false);
 
-        Assert.Equal([new StaffListItem(own.Id, "Inactive staff", false)], listed);
+        var listed = await service.BrowseForAppointmentsAsync(employee);
+        var inactiveProfiles = listed.Where(profile => !profile.IsActive).ToArray();
+
+        Assert.Equal(
+            new[] { new StaffListItem(own.Id, "Inactive staff", false) },
+            inactiveProfiles);
     }
 
     private sealed class FailingStaffLock : IStaffOperationLock

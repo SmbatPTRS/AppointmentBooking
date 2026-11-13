@@ -130,6 +130,8 @@ public sealed class TelegramUpdateDispatcher
         }
         // Clear the button spinner before feature processing. Retryable errors still propagate.
         if (callback is not null && !navigating) await sender.AnswerCallbackAsync(callback.Id, cancellationToken: ct);
+        var stepBeforeHandler = state.Step;
+
         var handlerStarted = false;
         try
         {
@@ -150,14 +152,23 @@ public sealed class TelegramUpdateDispatcher
         }
         catch when (handlerStarted)
         {
-            // A handler may reset state while entering a flow. Retain only this exact delivery's
-            // trusted routing information so retry can redraw without repeating its transition.
-            if (navigating) state.PendingNavigation = (deliveryKey, route);
-            else state.PendingDispatch = (
-                deliveryKey,
-                dispatchSourceRoute ?? route,
-                state.Step,
-                itemId);
+            if (navigating)
+            {
+                state.PendingNavigation = (deliveryKey, route);
+            }
+            else
+            {
+                var destinationRoute = state.Step != stepBeforeHandler
+                    ? state.Step
+                    : route;
+
+                state.PendingDispatch = (
+                    deliveryKey,
+                    dispatchSourceRoute ?? route,
+                    destinationRoute,
+                    itemId);
+            }
+
             throw;
         }
         if (navigating) state.PendingNavigation = null;
