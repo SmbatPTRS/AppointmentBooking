@@ -64,6 +64,11 @@ public sealed class TelegramUpdateDispatcher
         var deliveryKey = $"{update.Id}|{callback?.Id}|{callback?.Data}|{update.Message?.Text}";
         var resumingNavigation = state.PendingNavigation?.Key == deliveryKey;
         var resumingDispatch = state.PendingDispatch?.Key == deliveryKey;
+        var dispatchSourceRoute = resumingDispatch
+            ? state.PendingDispatch!.Value.SourceRoute
+            : (string?)null;
+        var retryRender = resumingDispatch &&
+            state.PendingDispatch!.Value.SourceRoute != state.PendingDispatch.Value.DestinationRoute;
         if (!resumingNavigation) state.PendingNavigation = null;
         if (!resumingDispatch) state.PendingDispatch = null;
         Guid? itemId = null;
@@ -99,7 +104,7 @@ public sealed class TelegramUpdateDispatcher
 
         if (resumingDispatch)
         {
-            route = state.PendingDispatch!.Value.Route;
+            route = state.PendingDispatch!.Value.DestinationRoute;
             itemId = state.PendingDispatch.Value.ItemId;
         }
 
@@ -129,11 +134,11 @@ public sealed class TelegramUpdateDispatcher
         try
         {
             var caller = await actors.ResolveAsync(telegramUser, ct);
-            if (!navigating) state.PendingDispatch = (deliveryKey, route, itemId);
+            if (!navigating) state.PendingDispatch = (deliveryKey, route, route, itemId);
             handlerStarted = true;
             await handler.HandleAsync(new TelegramHandlerContext(caller, chat.Id,
                 navigating ? null : update.Message?.Text, navigating ? null : parsed, state,
-                navigating ? null : itemId, navigating, resumingDispatch), ct);
+                navigating ? null : itemId, navigating, resumingDispatch, retryRender), ct);
         }
         catch (AppException error)
         {
@@ -148,7 +153,11 @@ public sealed class TelegramUpdateDispatcher
             // A handler may reset state while entering a flow. Retain only this exact delivery's
             // trusted routing information so retry can redraw without repeating its transition.
             if (navigating) state.PendingNavigation = (deliveryKey, route);
-            else state.PendingDispatch = (deliveryKey, route, itemId);
+            else state.PendingDispatch = (
+                deliveryKey,
+                dispatchSourceRoute ?? route,
+                state.Step,
+                itemId);
             throw;
         }
         if (navigating) state.PendingNavigation = null;

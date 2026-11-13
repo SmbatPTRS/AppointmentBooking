@@ -32,7 +32,7 @@ public sealed class ConversationState
     private readonly Dictionary<string, (string Route, Guid Id)> items = [];
     private readonly List<Screen> history = [];
     internal (string Key, string Route)? PendingNavigation { get; set; }
-    internal (string Key, string Route, Guid? ItemId)? PendingDispatch { get; set; }
+    internal (string Key, string SourceRoute, string DestinationRoute, Guid? ItemId)? PendingDispatch { get; set; }
     public bool CanGoBack => history.Count > 0;
     public bool AllowsCallback(string route) => allowedCallbacks.Contains(route);
     public bool AllowsPlainCallback(string route) => plainCallbacks.Contains(route);

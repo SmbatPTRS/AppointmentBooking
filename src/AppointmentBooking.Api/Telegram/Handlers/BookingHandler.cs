@@ -26,6 +26,11 @@ public sealed class BookingHandler(
 
     public async Task HandleAsync(TelegramHandlerContext context, CancellationToken ct)
     {
+        if (context.IsRetryRender)
+        {
+            await RenderCurrentScreenAsync(context, ct);
+            return;
+        }
         if (context.Callback?.Route == "bookings" || Command(context.Text) == "bookings" ||
             context.State.Step == "bookings")
         {
@@ -54,32 +59,39 @@ public sealed class BookingHandler(
             return;
         }
         
-        var step = context.State.Step;
+    }
 
-        if (context.IsRetry &&
-            context.Callback is not null &&
-            !string.Equals(context.Callback.Route, step, StringComparison.Ordinal))
+    private async Task RenderCurrentScreenAsync(TelegramHandlerContext context, CancellationToken ct)
+    {
+        switch (context.State.Step)
         {
-            switch (step)
-            {
-                case "book.staff":
-                    await RenderStaffAsync(context, ct);
-                    break;
-                case "book.service":
-                    await RenderServicesAsync(context, ct);
-                    break;
-                case "book.date":
-                    await RenderDateAsync(context, ct);
-                    break;
-                case "book.time":
-                    await RenderTimesAsync(context, ct);
-                    break;
-                case "book.confirm":
-                    await RenderConfirmationAsync(context, ct);
-                    break;
-            }
-
-            return;
+            case "book.staff":
+                await RenderStaffAsync(context, ct);
+                break;
+            case "book.service":
+                await RenderServicesAsync(context, ct);
+                break;
+            case "book.date":
+                await RenderDateAsync(context, ct);
+                break;
+            case "book.time":
+                await RenderTimesAsync(context, ct);
+                break;
+            case "book.confirm":
+                await RenderConfirmationAsync(context, ct);
+                break;
+            case "bookings":
+                await RenderBookingsAsync(context, ct);
+                break;
+            case "appointments":
+                await RenderAppointmentStaffAsync(context, ct);
+                break;
+            case "appointments.date":
+                await RenderAppointmentDateAsync(context, ct);
+                break;
+            case "appointments.list":
+                await RenderAppointmentListAsync(context, ct);
+                break;
         }
     }
 
