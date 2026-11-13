@@ -14,6 +14,7 @@ public sealed class ScheduleServiceTests(PostgresFixture fixture)
 {
     private sealed class Access(bool deny) : IAccessService
     {
+        public Task<bool> IsOwnerAsync(Actor actor, CancellationToken ct) => Task.FromResult(false);
         public Task RequireStaffManagementAsync(Actor actor, Guid id, CancellationToken ct) =>
             deny ? throw new AppException(ErrorCodes.Forbidden, "Denied", AppErrorKind.Forbidden) : Task.CompletedTask;
         public Task RequireOwnerAsync(Actor actor, CancellationToken ct) => throw new NotSupportedException();
@@ -210,6 +211,7 @@ public sealed class ScheduleServiceTests(PostgresFixture fixture)
     // cache active state and a repeated query alone would not refresh it.
     private sealed class DatabaseAccess(AppointmentBooking.Infrastructure.Persistence.AppDbContext db) : IAccessService
     {
+        public Task<bool> IsOwnerAsync(Actor actor, CancellationToken ct) => Task.FromResult(false);
         public async Task RequireStaffManagementAsync(Actor actor, Guid staffId, CancellationToken ct)
         {
             var staff = await db.StaffMembers.SingleAsync(s => s.Id == staffId, ct);

@@ -125,6 +125,7 @@ public sealed class BookingCoordinationTests
 
     private sealed class OwnerAccess : IAccessService
     {
+        public Task<bool> IsOwnerAsync(Actor actor, CancellationToken ct) => Task.FromResult(true);
         public Task RequireOwnerAsync(Actor actor, CancellationToken ct) => Task.CompletedTask;
         public Task RequireStaffManagementAsync(Actor actor, Guid staffMemberId, CancellationToken ct) =>
             throw new NotSupportedException();
