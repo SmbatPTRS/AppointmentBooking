@@ -15,6 +15,7 @@ using AppointmentBooking.Infrastructure.Repositories;
 using Microsoft.Extensions.Options;
 using AppointmentBooking.Infrastructure;
 using AppointmentBooking.Infrastructure.Persistence;
+using AppointmentBooking.Api.Telegram.Handlers;
 
 // Protected endpoints opt into the API-key policy. Keep it off unrelated routes.
 AppContext.SetSwitch("Microsoft.AspNetCore.Authentication.SuppressAutoDefaultScheme", true);
@@ -57,6 +58,18 @@ foreach (var route in AppointmentBooking.Api.Telegram.Handlers.ScheduleHandler.R
 builder.Services.AddScoped<BookingService>();
 builder.Services.AddScoped<BusinessSettingsService>();
 builder.Services.AddScoped<StaffManagementService>();
+builder.Services.AddScoped<BookingHandler>();
+builder.Services.AddScoped<ITelegramHandler>(provider => provider.GetRequiredService<BookingHandler>());
+foreach (var route in new[]
+{
+    "book.staff", "book.service", "book.date", "book.time", "book.confirm",
+    "bookings", "book.cancel", "appointments", "appointments.staff", "appointments.date",
+    "appointments.list", "appointment.complete"
+})
+{
+    builder.Services.AddScoped<ITelegramHandler>(provider =>
+        new BookingHandlerRoute(provider.GetRequiredService<BookingHandler>(), route));
+}
 builder.Services.AddOptions<ApiAccessOptions>()
     .BindConfiguration(ApiAccessOptions.SectionName)
     .Validate(options => options.Keys.All(entry =>

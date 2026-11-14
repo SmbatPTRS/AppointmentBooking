@@ -47,6 +47,23 @@ public sealed class StaffManagementService(
         return members.Select(member => new StaffListItem(member.Id, member.DisplayName, member.IsActive)).ToArray();
     }
 
+    public async Task<IReadOnlyList<StaffListItem>> BrowseForAppointmentsAsync(
+        Actor actor, CancellationToken ct = default)
+    {
+        var isOwner = await access.IsOwnerAsync(actor, ct);
+        var members = (await staff.ListAsync(isOwner, ct)).ToList();
+        if (!isOwner)
+        {
+            var ownProfile = await staff.GetByUserIdAsync(actor.UserId, ct);
+            if (ownProfile is { IsActive: false })
+                members.Add(ownProfile);
+        }
+
+        return members
+            .Select(member => new StaffListItem(member.Id, member.DisplayName, member.IsActive))
+            .ToArray();
+    }
+
     public async Task<StaffProfile> RenameAsync(
         Actor actor, Guid staffMemberId, string displayName, CancellationToken ct = default)
     {

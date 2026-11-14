@@ -9,6 +9,9 @@ public sealed class AccessService(
     IStaffRepository staff,
     long ownerTelegramUserId) : IAccessService
 {
+    public async Task<bool> IsOwnerAsync(Actor actor, CancellationToken ct) =>
+        (await GetCallerAsync(actor, ct)).TelegramUserId == ownerTelegramUserId;
+
     public async Task RequireOwnerAsync(Actor actor, CancellationToken ct)
     {
         User user = await GetCallerAsync(actor, ct);

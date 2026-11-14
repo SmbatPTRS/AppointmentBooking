@@ -14,6 +14,7 @@ Source: src/AppointmentBooking.Application/Abstractions/IAccessService.cs.
 Actor, AppException, AppErrorKind and ErrorCodes use AppointmentBooking.Application.Common.
 
 ```csharp
+Task<bool> IsOwnerAsync(Actor actor, CancellationToken ct);
 Task RequireOwnerAsync(Actor actor, CancellationToken ct);
 Task RequireStaffManagementAsync(Actor actor, Guid staffMemberId, CancellationToken ct);
 Task RequireAppointmentManagementAsync(Actor actor, Guid staffMemberId, CancellationToken ct);

@@ -16,3 +16,4 @@ artifacts/
 !**/.env.example
 *.dump
 *.backup
+AGENTS.md

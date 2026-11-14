@@ -10,6 +10,9 @@ namespace AppointmentBooking.Application.Abstractions;
 /// </summary>
 public interface IAccessService
 {
+    /// <summary>Returns whether the trusted actor is the configured owner.</summary>
+    Task<bool> IsOwnerAsync(Actor actor, CancellationToken ct);
+
     /// <summary>
     /// Allows only the configured owner. Other existing users receive
     /// ErrorCodes.Forbidden / AppErrorKind.Forbidden.
