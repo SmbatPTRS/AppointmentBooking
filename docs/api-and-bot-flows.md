@@ -122,3 +122,76 @@ Transport routing:
 - Polling service -> shared dispatcher -> feature handler -> application service.
 - Webhook controller -> shared dispatcher -> same feature handler -> same service.
 - Neither path performs a loopback HTTP call to the application's controllers.
+
+
+## Telegram owner staff list
+
+The owner's existing Staff management button and `/staff` open the staff list.
+`StaffManagementHandler` calls `StaffManagementService.ListAsync` with the trusted
+caller and includes inactive profiles. Each entry shows its display name and active
+status. Lists use ten profiles per page, with Previous page and Next page buttons,
+to respect Telegram text and shared item-mapping limits. An empty list displays
+"No staff profiles yet."
+
+Each employee button opens `staff.details` with a server-resolved staff ID. The
+details handler rechecks owner access through the staff service and displays the
+current name and activation status. The management draft stores the list page and
+selected staff ID. Back restores the previous screen and list page. Cancel returns
+to the main menu and clears the draft. Previous-screen buttons expire. Direct `/staff` commands from clients
+or employees are rejected by the application service, regardless of menu visibility.
+
+The owner can choose Rename from employee details, then submit a display name.
+The handler calls StaffManagementService.RenameAsync with the trusted caller and
+selected profile. Blank names and names longer than 200 characters leave the prompt
+open with Back/Cancel available. Success is sent after the operation completes.
+The draft remembers a successful rename so retrying a failed confirmation reply
+preserves the original result without applying the rename again. Back reloads the
+employee details with the current stored name.
+
+Employee details also offers Deactivate for active profiles and Reactivate for inactive
+profiles. The owner confirms on a separate screen, using a server-bound employee button.
+Ordinary text does not confirm. Back and Cancel leave activation unchanged.
+The handler calls StaffManagementService.SetActiveAsync with the selected employee
+and the explicit target status, preserving the service's booking coordination behavior.
+After saving, it invalidates the confirmation button and retains the completed result
+for a failed-reply retry. Back reloads the employee's current status.
+
+Add employee opens a registered-user lookup. The owner sends the user's numeric
+Telegram ID, reviews the registered name/username/ID, and chooses Use this user.
+Unregistered IDs and users who already have a staff profile receive a readable
+rejection. A new lookup invalidates the previous selection button.
+
+After selecting a user, the owner types the staff display name. The handler calls
+StaffManagementService.CreateAsync with that user's internal ID and the trusted
+caller. The service saves the active profile and its booking coordination row together.
+Invalid names keep the prompt open. Duplicate creation and a user removed since
+selection produce recovery messages. Back restores the selected-user preview;
+Cancel abandons the flow. A successful creation records the result before replying,
+so a failed reply can retry without creating another profile. View employee opens
+the new profile's details.
+
+The main menu's Business settings button opens the owner's current business name,
+staff label, timezone and currency. Edit business name and staff label accepts a
+two-line message, with business name first and staff label second. Edit timezone and
+currency accepts timezone ID first and currency second, for example Asia/Yerevan and
+AMD. Invalid input leaves the editor open with Back/Cancel available. These handlers
+call the same settings operations as HTTP and retain successful results for reply retry.
+Any booking, including a cancelled booking, blocks regional edits. Labels remain editable.
+Back reloads current settings; Cancel clears the flow and returns to the main menu.
+
+Active employees use Display name from the main menu or `/profile` to edit their own
+staff name. The application service resolves the profile from the trusted actor and
+rechecks permission on each update/save. Callback IDs and stored selections cannot
+redirect this action to another employee. Blank/overlength names leave a usable prompt.
+Inactive employees and clients cannot edit profiles. Owner users without their own
+staff profile receive an explanatory message and navigation controls. Successful
+self-renames retain their result for failed-reply retry.
+
+`/start` displays the caller's Telegram user ID. A prospective employee can share that
+ID with the owner, allowing staff creation without database access.
+
+Task 05 automated acceptance covers owner management, employee self-renaming,
+role restrictions, invalid input, Back/Cancel, stale/forged/copied buttons, booking
+history restrictions and failed Telegram replies. Tests use fake delivery and isolated
+PostgreSQL databases. Live Telegram verification and C's review are separate acceptance
+steps.
