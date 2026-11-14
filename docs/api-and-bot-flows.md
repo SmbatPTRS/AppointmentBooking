@@ -190,6 +190,14 @@ self-renames retain their result for failed-reply retry.
 `/start` displays the caller's Telegram user ID. A prospective employee can share that
 ID with the owner, allowing staff creation without database access.
 
+For a new delivery, the settings editors and rename handlers clear the previous
+completed result before authorization or profile reads can fail. An exact retry
+preserves a result completed by that delivery, so a committed write is not repeated.
+Staff pagination records whether the current delivery actually applied navigation;
+sharing the staff route across pages does not prove the transition happened.
+Regression coverage includes authorization-read failures after an earlier success,
+and Previous/Next page failures both before navigation and after reply delivery fails.
+
 Task 05 automated acceptance covers owner management, employee self-renaming,
 role restrictions, invalid input, Back/Cancel, stale/forged/copied buttons, booking
 history restrictions and failed Telegram replies. Tests use fake delivery and isolated

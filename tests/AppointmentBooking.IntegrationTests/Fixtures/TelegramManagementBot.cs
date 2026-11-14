@@ -16,14 +16,19 @@ public sealed class TelegramManagementBot : IAsyncDisposable
     public FakeTelegramClient Sender { get; } = new();
     public IServiceProvider Services => host.Services;
 
-    public TelegramManagementBot(string connectionString, long ownerId)
+    public TelegramManagementBot(
+        string connectionString, long ownerId, Action<IServiceCollection>? configureServices = null)
     {
         factory = new ApiFactory(connectionString);
         host = factory.WithWebHostBuilder(builder =>
         {
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
                 new Dictionary<string, string?> { ["Owner:TelegramUserId"] = ownerId.ToString() }));
-            builder.ConfigureTestServices(services => services.AddSingleton<ITelegramMessageSender>(Sender));
+            builder.ConfigureTestServices(services =>
+            {
+                services.AddSingleton<ITelegramMessageSender>(Sender);
+                configureServices?.Invoke(services);
+            });
         });
     }
 

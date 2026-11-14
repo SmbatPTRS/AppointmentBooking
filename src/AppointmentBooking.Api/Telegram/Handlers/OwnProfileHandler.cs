@@ -11,6 +11,12 @@ public sealed class OwnProfileHandler(
 
     public async Task HandleAsync(TelegramHandlerContext context, CancellationToken ct)
     {
+        var draft = context.State.GetFeatureData<OwnProfileDraft>(Route);
+        if (!context.IsRetry && !context.IsNavigation && draft is not null)
+        {
+            draft = draft with { SavedName = null };
+            context.State.SetFeatureData(Route, draft);
+        }
         StaffProfile profile;
         try
         {
@@ -24,7 +30,6 @@ public sealed class OwnProfileHandler(
             return;
         }
 
-        var draft = context.State.GetFeatureData<OwnProfileDraft>(Route);
         if (!context.IsNavigation && !(context.IsRetry && context.State.Step == Route) &&
             (context.Callback is not null || context.Text?.StartsWith('/') == true))
         {
@@ -37,11 +42,6 @@ public sealed class OwnProfileHandler(
         if (!context.IsNavigation && context.Callback is null && context.Text is { } name && !name.StartsWith('/') &&
             draft?.StaffId == profile.Id)
         {
-            if (!context.IsRetry)
-            {
-                draft = draft with { SavedName = null };
-                context.State.SetFeatureData(Route, draft);
-            }
             try
             {
                 if (!(context.IsRetry && draft.SavedName is not null))

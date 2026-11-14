@@ -9,11 +9,14 @@ public sealed class StaffManagementHandler(
 {
     public string Route => "staff";
     private const int PageSize = 10;
+    private const string Transition = "management.list-transition";
 
     public async Task HandleAsync(TelegramHandlerContext context, CancellationToken ct)
     {
+        // Both pages use the same route. Record actual navigation for this delivery.
+        if (!context.IsRetry) context.State.ClearFeatureData(Transition);
         var profiles = await staff.ListAsync(context.Caller.Actor, includeInactive: true, ct);
-        if (!context.IsNavigation && !(context.IsRetry && context.State.Step == Route))
+        if (!context.IsNavigation && !context.State.GetFeatureData<bool>(Transition))
         {
             if (context.ItemId is { } firstOnPage)
             {
@@ -32,6 +35,7 @@ public sealed class StaffManagementHandler(
                 context.State.EnterFlow(Route, clock.UtcNow);
                 context.State.SetFeatureData("management", new StaffManagementDraft());
             }
+            context.State.SetFeatureData(Transition, true);
         }
 
         var draft = context.State.GetFeatureData<StaffManagementDraft>("management") ?? new();

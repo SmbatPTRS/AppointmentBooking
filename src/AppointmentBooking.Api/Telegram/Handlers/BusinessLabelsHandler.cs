@@ -12,6 +12,9 @@ public sealed class BusinessLabelsHandler(
 
     public async Task HandleAsync(TelegramHandlerContext context, CancellationToken ct)
     {
+        // A new delivery cannot reuse an earlier update's completed result.
+        if (!context.IsRetry && !context.IsNavigation)
+            context.State.ClearFeatureData(Route);
         await access.RequireOwnerAsync(context.Caller.Actor, ct);
         var draft = context.State.GetFeatureData<BusinessSettingsEditDraft>(Route) ?? new();
         if (!context.IsNavigation && !(context.IsRetry && context.State.Step == Route) &&

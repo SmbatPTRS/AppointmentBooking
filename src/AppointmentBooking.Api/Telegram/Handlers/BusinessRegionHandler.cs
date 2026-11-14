@@ -12,6 +12,9 @@ public sealed class BusinessRegionHandler(
 
     public async Task HandleAsync(TelegramHandlerContext context, CancellationToken ct)
     {
+        // Clear before authorization, which can fail before input processing starts.
+        if (!context.IsRetry && !context.IsNavigation)
+            context.State.ClearFeatureData(Route);
         await access.RequireOwnerAsync(context.Caller.Actor, ct);
         var draft = context.State.GetFeatureData<BusinessSettingsEditDraft>(Route) ?? new();
         if (!context.IsNavigation && !(context.IsRetry && context.State.Step == Route) &&

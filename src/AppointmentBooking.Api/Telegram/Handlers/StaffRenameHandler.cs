@@ -11,10 +11,15 @@ public sealed class StaffRenameHandler(
 
     public async Task HandleAsync(TelegramHandlerContext context, CancellationToken ct)
     {
+        var draft = context.State.GetFeatureData<StaffManagementDraft>("management");
+        if (!context.IsRetry && !context.IsNavigation && draft is not null)
+        {
+            draft = draft with { SavedName = null };
+            context.State.SetFeatureData("management", draft);
+        }
         // Renaming another employee belongs to the owner flow, even though the service
         // also permits an active employee to rename their own profile.
         var profiles = await staff.ListAsync(context.Caller.Actor, includeInactive: true, ct);
-        var draft = context.State.GetFeatureData<StaffManagementDraft>("management");
         if (draft?.StaffId is not { } staffId || !profiles.Any(profile => profile.Id == staffId))
         {
             await sender.SendMenuAsync(context.ChatId, "Select an employee from Staff management first.",
@@ -36,11 +41,6 @@ public sealed class StaffRenameHandler(
         else if (!context.IsNavigation && context.Callback is null &&
                  context.Text is { } name && !name.StartsWith('/'))
         {
-            if (!context.IsRetry)
-            {
-                draft = draft with { SavedName = null };
-                context.State.SetFeatureData("management", draft);
-            }
             try
             {
                 // A failed reply must not repeat an already committed rename.
