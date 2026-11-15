@@ -5,10 +5,12 @@ using AppointmentBooking.Application.Common;
 
 namespace AppointmentBooking.Api.Telegram.Handlers;
 
-public sealed class SharedServicesHandler(IAccessService access, ITelegramMessageSender sender,
+public sealed class SharedServicesHandler(CatalogService catalog, ITelegramMessageSender sender,
     IClock clock) : ITelegramHandler
 {
     public string Route => "services";
+    private const string PageKey = "services.page";
+    private const int PageSize = 10;
 
     public async Task HandleAsync(TelegramHandlerContext context, CancellationToken ct)
     {
@@ -17,15 +19,38 @@ public sealed class SharedServicesHandler(IAccessService access, ITelegramMessag
         if (!context.IsNavigation && context.Callback is null && context.Text?.StartsWith('/') != true)
             return;
 
-        await access.RequireOwnerAsync(context.Caller.Actor, ct);
+        var services = await catalog.ListServicesForOwnerAsync(context.Caller.Actor, ct);
         if (!context.IsNavigation && !state.GetFeatureData<bool>(Route))
         {
-            state.EnterFlow(Route, clock.UtcNow);
+            if (context.ItemId is { } anchor)
+            {
+                var index = services.ToList().FindIndex(service => service.Id == anchor);
+                state.BeginStep(Route, clock.UtcNow);
+                state.SetFeatureData(PageKey, Math.Max(0, index) / PageSize);
+            }
+            else
+            {
+                state.EnterFlow(Route, clock.UtcNow);
+            }
             state.SetFeatureData(Route, true);
         }
 
-        await sender.SendMenuAsync(context.ChatId, "Shared services",
-            [state.Button("Create service", "services.create"), .. NavigationKeyboard.Create(state)], ct);
+        var lastPage = Math.Max(0, (services.Count - 1) / PageSize);
+        var page = Math.Min(state.GetFeatureData<int>(PageKey), lastPage);
+        var buttons = services.Skip(page * PageSize).Take(PageSize)
+            .Select(service => state.ItemButton(
+                $"{service.Name} ({(service.IsActive ? "active" : "inactive")})", "services.rename", service.Id))
+            .ToList();
+        if (page > 0)
+            buttons.Add(state.ItemButton("Previous page", Route, services[(page - 1) * PageSize].Id));
+        if (page < lastPage)
+            buttons.Add(state.ItemButton("Next page", Route, services[(page + 1) * PageSize].Id));
+        buttons.Add(state.Button("Create service", "services.create"));
+        buttons.AddRange(NavigationKeyboard.Create(state));
+
+        var title = services.Count == 0 ? "Shared services: no services yet."
+            : $"Shared services · page {page + 1} of {lastPage + 1}. Choose a service to rename.";
+        await sender.SendMenuAsync(context.ChatId, title, buttons, ct);
     }
 }
 
