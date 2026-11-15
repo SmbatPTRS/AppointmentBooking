@@ -5,6 +5,7 @@ using AppointmentBooking.Api.Authentication;
 using Microsoft.AspNetCore.Authentication;
 using AppointmentBooking.Api.Configuration;
 using AppointmentBooking.Api.Telegram;
+using AppointmentBooking.Api.Telegram.Handlers;
 using AppointmentBooking.Application.Availability;
 using AppointmentBooking.Application.Bookings;
 using AppointmentBooking.Application.Business;
@@ -57,6 +58,16 @@ foreach (var route in AppointmentBooking.Api.Telegram.Handlers.ScheduleHandler.R
 builder.Services.AddScoped<BookingService>();
 builder.Services.AddScoped<BusinessSettingsService>();
 builder.Services.AddScoped<StaffManagementService>();
+builder.Services.AddScoped<ITelegramHandler, StaffManagementHandler>();
+builder.Services.AddScoped<ITelegramHandler, StaffDetailsHandler>();
+builder.Services.AddScoped<ITelegramHandler, StaffRenameHandler>();
+builder.Services.AddScoped<ITelegramHandler, StaffActivationHandler>();
+builder.Services.AddScoped<ITelegramHandler, StaffAddHandler>();
+builder.Services.AddScoped<ITelegramHandler, StaffCreateHandler>();
+builder.Services.AddScoped<ITelegramHandler, BusinessSettingsHandler>();
+builder.Services.AddScoped<ITelegramHandler, BusinessLabelsHandler>();
+builder.Services.AddScoped<ITelegramHandler, BusinessRegionHandler>();
+builder.Services.AddScoped<ITelegramHandler, OwnProfileHandler>();
 builder.Services.AddOptions<ApiAccessOptions>()
     .BindConfiguration(ApiAccessOptions.SectionName)
     .Validate(options => options.Keys.All(entry =>
