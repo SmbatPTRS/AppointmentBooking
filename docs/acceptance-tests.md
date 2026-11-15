@@ -49,6 +49,22 @@ Use real PostgreSQL for database constraints, transactions and concurrency tests
 - Adding a day off concurrently with booking creation cannot commit an inconsistent pair.
 - Direct conflicting SQL inserts are rejected by the exclusion constraint.
 
+### PostgreSQL concurrency evidence
+
+The integration suite uses the Testcontainers PostgreSQL fixture only; each
+operation gets its own `AppDbContext` and connection. `BookingConcurrencyTests`
+coordinates independent requests with a start gate and verifies committed rows
+for same-staff overlap, different staff, adjacent appointments, cancellation
+slot release, and concurrent lifecycle updates. `BookingIdempotencyTests`
+verifies concurrent identical requests return one persisted ID, fresh-context
+recovery after the unique-key race, altered payload rejection (including a
+different employee), offering snapshot stability, and retries after
+cancellation. `ScheduleConcurrencyTests` holds the PostgreSQL advisory lock
+while the opposing operation starts, then commits the booking before the
+day-off mutation proceeds; the mutation observes the committed booking and
+leaves no day-off row. `SchemaConstraintsTests` also attempts direct SQL
+inserts and asserts PostgreSQL reports the exclusion and unique constraints.
+
 ## Telegram and deployment
 
 - /start and a full booking/cancellation flow work in polling and webhook modes.
