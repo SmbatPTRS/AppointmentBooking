@@ -16,6 +16,7 @@ public sealed class CatalogServiceTests(PostgresFixture fixture)
 {
     private sealed class OwnerAccess(bool denied = false) : IAccessService
     {
+        public Task<bool> IsOwnerAsync(Actor actor, CancellationToken ct) => Task.FromResult(!denied);
         public Task RequireOwnerAsync(Actor actor, CancellationToken ct) => denied
             ? throw new AppException(ErrorCodes.Forbidden, "Owner required.", AppErrorKind.Forbidden)
             : Task.CompletedTask;

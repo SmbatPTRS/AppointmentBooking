@@ -284,6 +284,10 @@ public sealed class TelegramScheduleTests(PostgresFixture fixture)
     }
     private sealed class FailingAccess(IAccessService inner, Failures failures) : IAccessService
     {
+        public Task<bool> IsOwnerAsync(Actor actor, CancellationToken ct) =>
+            inner.IsOwnerAsync(actor, ct);
+
+
         public Task RequireOwnerAsync(Actor actor, CancellationToken ct)
         {
             if (failures.Access) { failures.Access = false; throw new IOException("Before authorization"); }

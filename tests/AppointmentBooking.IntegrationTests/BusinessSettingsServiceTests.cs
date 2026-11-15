@@ -61,6 +61,9 @@ public sealed class BusinessSettingsServiceTests
 
     private sealed class OwnerAccess(Actor owner) : IAccessService
     {
+        public Task<bool> IsOwnerAsync(Actor actor, CancellationToken ct) =>
+            Task.FromResult(actor == owner);
+
         public Task RequireOwnerAsync(Actor actor, CancellationToken ct)
         {
             Assert.Equal(owner, actor);

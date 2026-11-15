@@ -118,6 +118,11 @@ public sealed class ManagementRetryTests
 
     private sealed class FailingAccess(IAccessService inner, Failures failures) : IAccessService
     {
+        public Task<bool> IsOwnerAsync(Actor actor, CancellationToken ct)
+        {
+            return inner.IsOwnerAsync(actor, ct);
+        }
+
         public Task RequireOwnerAsync(Actor actor, CancellationToken ct)
         {
             failures.Check();

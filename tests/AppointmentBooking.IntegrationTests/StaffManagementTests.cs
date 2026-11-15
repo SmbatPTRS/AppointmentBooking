@@ -63,6 +63,62 @@ public sealed class StaffManagementTests(PostgresFixture fixture)
             .SingleAsync(row => row.StaffMemberId == profile.Id)).ChangeVersion);
     }
 
+    [Fact]
+    public async Task AppointmentStaffBrowseIncludesAllInactiveProfilesForOwner()
+    {
+        await using var db = fixture.CreateContext();
+        var ownerUser = new User(8_000_000_004, "Owner", null, DateTime.UtcNow);
+        var employeeUser = new User(8_000_000_005, "Staff user", null, DateTime.UtcNow);
+        db.Users.AddRange(ownerUser, employeeUser);
+        await db.SaveChangesAsync();
+
+        var owner = new Actor(ownerUser.Id);
+        var access = new OwnerAccess(owner);
+        var service = new StaffManagementService(access, new UserRepository(db),
+            new StaffRepository(db), new BookingCoordinationRepository(db),
+            new PostgresStaffOperationLock(db), db);
+        var profile = await service.CreateAsync(owner, employeeUser.Id, "Inactive staff");
+        await service.SetActiveAsync(owner, profile.Id, false);
+
+        var listed = await service.BrowseForAppointmentsAsync(owner);
+
+        Assert.Contains(new StaffListItem(profile.Id, "Inactive staff", false), listed);
+    }
+
+    [Fact]
+    public async Task InactiveEmployeeBrowseIncludesOnlyTheirOwnInactiveProfile()
+    {
+        await using var db = fixture.CreateContext();
+        var ownerUser = new User(8_000_000_006, "Owner", null, DateTime.UtcNow);
+        var employeeUser = new User(8_000_000_007, "Staff user", null, DateTime.UtcNow);
+        var otherEmployeeUser = new User(
+            Random.Shared.NextInt64(10_000_000_000, 90_000_000_000),
+            "Other staff user", null, DateTime.UtcNow);
+
+        db.Users.AddRange(ownerUser, employeeUser, otherEmployeeUser);
+        await db.SaveChangesAsync();
+
+        var owner = new Actor(ownerUser.Id);
+        var employee = new Actor(employeeUser.Id);
+        var access = new OwnerAccess(owner);
+        var service = new StaffManagementService(access, new UserRepository(db),
+            new StaffRepository(db), new BookingCoordinationRepository(db),
+            new PostgresStaffOperationLock(db), db);
+
+        var own = await service.CreateAsync(owner, employeeUser.Id, "Inactive staff");
+        await service.SetActiveAsync(owner, own.Id, false);
+
+        var other = await service.CreateAsync(owner, otherEmployeeUser.Id, "Other inactive staff");
+        await service.SetActiveAsync(owner, other.Id, false);
+
+        var listed = await service.BrowseForAppointmentsAsync(employee);
+        var inactiveProfiles = listed.Where(profile => !profile.IsActive).ToArray();
+
+        Assert.Equal(
+            new[] { new StaffListItem(own.Id, "Inactive staff", false) },
+            inactiveProfiles);
+    }
+
     private sealed class FailingStaffLock : IStaffOperationLock
     {
         public Task AcquireAsync(Guid staffMemberId, CancellationToken ct) =>
@@ -71,6 +127,9 @@ public sealed class StaffManagementTests(PostgresFixture fixture)
 
     private sealed class OwnerAccess(Actor owner) : IAccessService
     {
+        public Task<bool> IsOwnerAsync(Actor actor, CancellationToken ct) =>
+            Task.FromResult(actor == owner);
+
         public Task RequireOwnerAsync(Actor actor, CancellationToken ct)
         {
             Assert.Equal(owner, actor);
