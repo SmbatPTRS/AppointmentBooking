@@ -1,3 +1,6 @@
+using AppointmentBooking.Application.Abstractions;
+using AppointmentBooking.Application.Scheduling;
+using AppointmentBooking.Infrastructure.Transactions;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -38,7 +41,7 @@ public sealed class AvailabilityEndpointsTests(PostgresFixture fixture)
         public async ValueTask DisposeAsync() { await Host.DisposeAsync(); await Factory.DisposeAsync(); }
     }
 
-    private async Task<Setup> SeedAsync(int duration = 40)
+    private async Task<Setup> SeedAsync(int duration = 40, LockGate? gate = null)
     {
         await using var db = fixture.CreateContext();
         var clock = new Clock();
@@ -62,9 +65,98 @@ public sealed class AvailabilityEndpointsTests(PostgresFixture fixture)
                 ["ApiAccess:Keys:0:TelegramUserId"] = customer.TelegramUserId.ToString(),
                 ["Booking:SlotStepMinutes"] = "15", ["Booking:MaxAdvanceDays"] = "30"
             }));
-            builder.ConfigureTestServices(services => services.AddSingleton<IClock>(clock));
+            builder.ConfigureTestServices(services =>
+            {
+                services.AddSingleton<IClock>(clock);
+                if (gate is not null)
+                    services.AddScoped<IStaffOperationLock>(provider => new GatedStaffLock(
+                        new PostgresStaffOperationLock(provider.GetRequiredService<AppDbContext>()), gate));
+            });
         });
         return new(factory, host, customer, staff, offering, TimeZoneInfo.FindSystemTimeZoneById(business.TimeZoneId));
+    }
+
+    private sealed class LockGate
+    {
+        public TaskCompletionSource Held { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int Attempts;
+    }
+
+    private sealed class GatedStaffLock(PostgresStaffOperationLock inner, LockGate gate) : IStaffOperationLock
+    {
+        public async Task AcquireAsync(Guid staffId, CancellationToken ct)
+        {
+            var attempt = Interlocked.Increment(ref gate.Attempts);
+            await inner.AcquireAsync(staffId, ct);
+            if (attempt == 1)
+            {
+                gate.Held.TrySetResult();
+                await gate.Release.Task.WaitAsync(ct);
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task BookingAndConflictingHoursEditRecheckStateUnderTheSameLock(bool bookingFirst)
+    {
+        var gate = new LockGate();
+        await using var setup = await SeedAsync(30, gate);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var ct = timeout.Token;
+        var start = TimeZoneInfo.ConvertTimeToUtc(new DateTime(2026, 11, 10, 16, 0, 0), setup.Zone);
+        var request = new CreateBookingRequest(Guid.NewGuid(), setup.ClientUser.Id, setup.Offering.Id, start, 100m, 30);
+        var proposed = new WorkingHoursModel(new(9, 0), new(16, 0));
+        await using var bookingScope = setup.Host.Services.CreateAsyncScope();
+        await using var scheduleScope = setup.Host.Services.CreateAsyncScope();
+        await using var db = fixture.CreateContext();
+        var bookings = bookingScope.ServiceProvider.GetRequiredService<BookingService>();
+        var schedules = scheduleScope.ServiceProvider.GetRequiredService<ScheduleService>();
+        Task Book() => bookings.CreateAsync(new Actor(setup.ClientUser.Id), request, ct);
+        Task Edit() => schedules.SetHoursAsync(new Actor(setup.Staff.UserId), setup.Staff.Id, proposed, ct);
+        Task first = bookingFirst ? Book() : Edit();
+        Task? second = null;
+
+        try
+        {
+            await Task.WhenAny(first, gate.Held.Task).WaitAsync(ct);
+            if (first.IsCompleted) await first;
+            Assert.True(gate.Held.Task.IsCompletedSuccessfully, "The first operation must acquire the employee lock.");
+            second = bookingFirst ? Edit() : Book();
+            while (!await db.Database.SqlQueryRaw<bool>(
+                """SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND NOT granted) AS "Value" """)
+                .SingleAsync(ct))
+            {
+                Assert.False(second.IsCompleted, "The second operation must wait for the employee lock.");
+                await Task.Delay(10, ct);
+            }
+        }
+        catch
+        {
+            await timeout.CancelAsync();
+            try { await Task.WhenAll(first, second ?? Task.CompletedTask); }
+            catch { /* Preserve the original assertion or cancellation. */ }
+            throw;
+        }
+        finally
+        {
+            gate.Release.TrySetResult();
+        }
+
+        await first;
+        var error = await Assert.ThrowsAsync<AppException>(() => second!);
+        Assert.Equal(AppErrorKind.Conflict, error.Kind);
+        Assert.Equal(bookingFirst ? ErrorCodes.ScheduleConflictsWithBookings : ErrorCodes.TimeUnavailable, error.Code);
+
+        var hours = await db.WorkingHours.SingleAsync(h => h.StaffMemberId == setup.Staff.Id, ct);
+        var stored = await db.Bookings.Where(b => b.StaffMemberId == setup.Staff.Id).ToListAsync(ct);
+        Assert.Equal(new TimeOnly(bookingFirst ? 18 : 16, 0), hours.ClosesAt);
+        if (bookingFirst)
+            Assert.Equal(start, Assert.Single(stored).StartsAtUtc);
+        else
+            Assert.Empty(stored);
     }
 
     private static async Task AssertError(HttpResponseMessage response, HttpStatusCode status, string? code = null)
