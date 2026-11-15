@@ -63,6 +63,8 @@ public sealed class AvailabilityEndpointsTests(PostgresFixture fixture)
             {
                 ["ApiAccess:Keys:0:Key"] = "availability-test",
                 ["ApiAccess:Keys:0:TelegramUserId"] = customer.TelegramUserId.ToString(),
+                ["ApiAccess:Keys:1:Key"] = "availability-employee",
+                ["ApiAccess:Keys:1:TelegramUserId"] = employee.TelegramUserId.ToString(),
                 ["Booking:SlotStepMinutes"] = "15", ["Booking:MaxAdvanceDays"] = "30"
             }));
             builder.ConfigureTestServices(services =>
@@ -325,6 +327,48 @@ public sealed class AvailabilityEndpointsTests(PostgresFixture fixture)
         await AssertError(await client.GetAsync(setup.Url().Replace(name + "=" + value, name + "=" + Guid.Empty)), HttpStatusCode.BadRequest, ErrorCodes.ValidationFailed);
         await AssertError(await client.GetAsync(setup.Url().Replace(name + "=" + value, name + "=invalid")), HttpStatusCode.BadRequest);
         await AssertError(await client.GetAsync(setup.Url().Replace(name + "=" + value, "unused=1")), HttpStatusCode.BadRequest, ErrorCodes.ValidationFailed);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RemovingDayOffRestoresSlotsOnlyForTheEmployeeWhoRemovedIt(bool recurring)
+    {
+        await using var first = await SeedAsync(30);
+        await using var second = await SeedAsync(30);
+        using var customer = first.Client();
+        using var employee = first.Client("availability-employee");
+        using var otherEmployee = second.Client("availability-employee");
+        var date = new DateOnly(2026, 11, 10);
+        var day = recurring ? new DayOffModel(Weekday: date.DayOfWeek) : new DayOffModel(Date: date);
+        var firstDays = $"/api/staff/{first.Staff.Id}/days-off";
+        var secondDays = $"/api/staff/{second.Staff.Id}/days-off";
+
+        var before = (await customer.GetFromJsonAsync<AvailableSlot[]>(first.Url()))!;
+        Assert.NotEmpty(before);
+        Assert.NotEmpty((await customer.GetFromJsonAsync<AvailableSlot[]>(second.Url()))!);
+
+        using var firstAdded = await employee.PostAsJsonAsync(firstDays, day);
+        using var secondAdded = await otherEmployee.PostAsJsonAsync(secondDays, day);
+        Assert.Equal(HttpStatusCode.Created, firstAdded.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, secondAdded.StatusCode);
+        var firstOff = (await firstAdded.Content.ReadFromJsonAsync<DayOffDto>())!;
+        var secondOff = (await secondAdded.Content.ReadFromJsonAsync<DayOffDto>())!;
+        Assert.Empty((await customer.GetFromJsonAsync<AvailableSlot[]>(first.Url()))!);
+        Assert.Empty((await customer.GetFromJsonAsync<AvailableSlot[]>(second.Url()))!);
+
+        // A foreign day-off ID must not be usable even under the caller's own staff route.
+        await AssertError(await employee.DeleteAsync($"{firstDays}/{secondOff.Id}"),
+            HttpStatusCode.NotFound, ErrorCodes.DayOffNotFound);
+        await AssertError(await employee.DeleteAsync($"{secondDays}/{secondOff.Id}"),
+            HttpStatusCode.Forbidden);
+        using var deleted = await employee.DeleteAsync($"{firstDays}/{firstOff.Id}");
+        Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
+
+        Assert.Equal(before, (await customer.GetFromJsonAsync<AvailableSlot[]>(first.Url()))!);
+        Assert.Empty((await customer.GetFromJsonAsync<AvailableSlot[]>(second.Url()))!);
+        Assert.Empty((await employee.GetFromJsonAsync<DayOffDto[]>(firstDays))!);
+        Assert.Equal(secondOff, Assert.Single((await otherEmployee.GetFromJsonAsync<DayOffDto[]>(secondDays))!));
     }
 
     [Fact]
