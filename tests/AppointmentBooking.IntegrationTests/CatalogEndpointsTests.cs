@@ -155,6 +155,76 @@ public sealed class CatalogEndpointsTests(PostgresFixture fixture)
         Assert.Empty((await client.GetFromJsonAsync<StaffServiceDto[]>(setup.Offerings))!);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task OwnerRenamesServiceWithoutChangingItsStatusOrOffering(bool active)
+    {
+        await using var setup = await Seed(activeService: active);
+        using var owner = setup.Client("owner");
+        var name = "Renamed-" + Guid.NewGuid();
+        using var response = await owner.PatchAsJsonAsync($"/api/services/{setup.Service.Id}",
+            new { name = " " + name + " " });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(new ServiceDto(setup.Service.Id, name, active),
+            await response.Content.ReadFromJsonAsync<ServiceDto>());
+
+        await using var db = fixture.CreateContext();
+        var stored = await db.Services.SingleAsync(s => s.Id == setup.Service.Id);
+        Assert.Equal(name, stored.Name);
+        Assert.Equal(active, stored.IsActive);
+        var offering = await db.StaffServices.SingleAsync(s => s.Id == setup.Offering.Id);
+        Assert.Equal(stored.Id, offering.ServiceId);
+        Assert.Equal(1250.25m, offering.Price);
+        Assert.Equal(45, offering.DurationMinutes);
+
+        using var customer = setup.Client("customer");
+        var catalogue = (await customer.GetFromJsonAsync<ServiceDto[]>("/api/services"))!;
+        Assert.Equal(active, catalogue.Any(s => s.Id == stored.Id && s.Name == name));
+    }
+
+    [Theory]
+    [InlineData(null, HttpStatusCode.Unauthorized)]
+    [InlineData("wrong-key", HttpStatusCode.Unauthorized)]
+    [InlineData("employee", HttpStatusCode.Forbidden)]
+    [InlineData("customer", HttpStatusCode.Forbidden)]
+    public async Task RenameRequiresOwner(string? key, HttpStatusCode expected)
+    {
+        await using var setup = await Seed();
+        using var client = setup.Client(key);
+        using var response = await client.PatchAsJsonAsync($"/api/services/{setup.Service.Id}",
+            new { name = "Unauthorized rename" });
+        Assert.Equal(expected, response.StatusCode);
+        await using var db = fixture.CreateContext();
+        Assert.Equal(setup.Service.Name, (await db.Services.SingleAsync(s => s.Id == setup.Service.Id)).Name);
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("{\"name\":\"   \"}")]
+    [InlineData("{\"name\":\"Valid\",\"isActive\":false}")]
+    public async Task RenameRejectsInvalidOrUnsupportedFields(string body)
+    {
+        await using var setup = await Seed();
+        using var owner = setup.Client("owner");
+        using var response = await owner.PatchAsync($"/api/services/{setup.Service.Id}",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await using var db = fixture.CreateContext();
+        var stored = await db.Services.SingleAsync(s => s.Id == setup.Service.Id);
+        Assert.Equal(setup.Service.Name, stored.Name);
+        Assert.True(stored.IsActive);
+    }
+
+    [Fact]
+    public async Task OwnerCannotRenameMissingService()
+    {
+        await using var setup = await Seed();
+        using var owner = setup.Client("owner");
+        using var response = await owner.PatchAsJsonAsync($"/api/services/{Guid.NewGuid()}", new { name = "New name" });
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
     private async Task<Setup> Seed(bool activeStaff = true, bool activeService = true, bool activeOffering = true)
     {
         await using var db = fixture.CreateContext();
