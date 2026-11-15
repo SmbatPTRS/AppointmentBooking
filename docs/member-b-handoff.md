@@ -1,9 +1,15 @@
 # Member B handoff
 
-Updated 2026-11-09. Tasks 07–09 have application/repository groundwork;
+Updated 2026-11-12. Tasks 07–09 have application/repository groundwork;
 Tasks 10–12 and end-to-end acceptance are not complete.
 
 ## Implemented
+
+- Schedule HTTP API and Telegram schedule management are merged (PRs #17/#24).
+  See member-b-schedule-api.md and member-b-telegram-schedule.md.
+- Availability HTTP API is merged (PR #23); see member-b-availability-api.md.
+- Catalogue HTTP browsing and owner service creation are implemented in this branch;
+  see member-b-catalog-api.md. Catalogue editing/configuration remain pending.
 
 - Catalog DTOs and CatalogRules enforce trimmed service names up to 200 characters,
   numeric(12,2) price bounds and at most two meaningful decimal places.
@@ -44,14 +50,12 @@ not joint acceptance of C's BookingService or coordination-version checks.
 
 ScheduleService tests use an IAccessService double; they do not prove A's authorization rules.
 ScheduleService is registered and exposed through the five schedule HTTP routes;
-see member-b-schedule-api.md. Telegram schedule editing remains pending. No
-production allow-all authorization implementation is supplied.
+see member-b-schedule-api.md. Telegram schedule editing now uses the same service
+with real access checks; see member-b-telegram-schedule.md. No production allow-all
+authorization implementation is supplied.
 
 ## Remaining work
 
-- Complete Telegram schedule adapters; HTTP wiring now uses A's merged
-  production access implementation. GetHoursAsync returns an authorized read-only
-  model, or null when hours have not been configured.
 - Broaden service tests for commit failures and boundary cases. Cancellation while
   waiting for the PostgreSQL employee lock is covered for hours edits and day-off
   additions, including transaction disposal and unchanged stored schedules.
@@ -60,8 +64,8 @@ production allow-all authorization implementation is supplied.
   double. These tests do not verify the production authorization implementation.
 - Complete remaining CatalogService mutations; creation and active browsing are merged.
   Coordinate shared-service/offering lock ordering with A/C before mutations.
-- Integrate Task 10 controllers and Task 11 feature handlers with trusted identity
-  and D's conversation/sender/navigation contracts.
+- Complete remaining catalogue management HTTP/Telegram operations for Tasks 10/11.
+  Schedule adapters are implemented; customer catalogue browsing is also implemented.
 - Run Task 12 joint booking-versus-schedule acceptance with C's actual booking code,
   including coordination-version changes; these remain A/C-owned implementations.
 - Reviewers: A for Task 08; C additionally reviews transaction/lock boundaries.

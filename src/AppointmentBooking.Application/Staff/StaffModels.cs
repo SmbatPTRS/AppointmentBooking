@@ -11,6 +11,9 @@ public sealed record StaffProfile(Guid Id, Guid UserId, string DisplayName, bool
 
 public sealed record StaffListItem(Guid Id, string DisplayName, bool IsActive);
 
+public sealed record RegisteredStaffCandidate(
+    Guid Id, long TelegramUserId, string DisplayName, string? TelegramUsername);
+
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record CreateStaffRequest(
     [property: JsonRequired] Guid UserId,
