@@ -89,3 +89,13 @@ Ref: staff_days_off.staff_member_id > staff_members.id [delete: restrict]
 Ref: bookings.client_user_id > users.id [delete: restrict]
 Ref: bookings.staff_member_id > staff_members.id [delete: restrict]
 Ref: bookings.(staff_service_id, staff_member_id) > staff_services.(id, staff_member_id) [delete: restrict]
+
+Table booking_coordination {
+  id bigint [pk, increment]
+  business_settings_id int [unique]
+  staff_member_id uuid [unique]
+  change_version bigint [not null, default: 0]
+  Note: 'CHECK exactly one scope reference is non-null; CHECK change_version >= 0. Independent version increments invalidate earlier booking attempts. Business lock precedes staff coordination lock.'
+}
+Ref: booking_coordination.business_settings_id > business_settings.id [delete: restrict]
+Ref: booking_coordination.staff_member_id > staff_members.id [delete: restrict]

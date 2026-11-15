@@ -2,6 +2,7 @@
 
 These are required scenarios, not claims that tests already exist or pass.
 Use real PostgreSQL for database constraints, transactions and concurrency tests.
+Recorded results, owners and pending release gates are in [Task 06 release checklist](task06-release-checklist.md).
 
 ## Foundation
 
@@ -51,14 +52,14 @@ Use real PostgreSQL for database constraints, transactions and concurrency tests
 
 ## Telegram and deployment
 
-- /start and a full booking/cancellation flow work in polling and webhook modes.
-- Missing/incorrect webhook secrets are rejected.
+- /start and a full booking/cancellation flow work in polling mode.
+- Webhook is deferred by project decision and is not an acceptance requirement.
 - Conversation navigation handles Back, Cancel, invalid input and expiration.
 - Old buttons, another user's callbacks and state loss on restart are handled safely.
 - Repeated update delivery and confirmation clicks do not duplicate bookings.
 - Send failure after commit does not undo or duplicate the appointment on retry.
-- Polling offsets, graceful shutdown and mode switching preserve pending work.
-- Both transports invoke the same feature/application logic.
+- Polling offsets, graceful shutdown and removal of a previously configured webhook preserve pending work.
+- HTTP and Telegram handlers invoke the same application services.
 - Full setup works from the README; tests run on CI with a real test database.
 
 ## Demonstration order
@@ -70,4 +71,7 @@ Use real PostgreSQL for database constraints, transactions and concurrency tests
 5. Cancel and show released availability.
 6. Show snapshots survive offering changes.
 7. Reject unauthorized schedule edit; repeat confirmation without duplicates.
-8. Switch transport and repeat the core flow; show Swagger and test results.
+8. Show the same operations through Swagger with separate role identities and present recorded test results.
+
+Live demonstration steps remain pending until the team executes and records them;
+catalogue setup through the UI depends on B completing offering management.

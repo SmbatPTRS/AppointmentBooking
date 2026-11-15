@@ -11,7 +11,7 @@ One ASP.NET Core host exposes HTTP controllers and hosts Telegram transports.
 - Infrastructure -> Application (and transitively Domain): EF Core, PostgreSQL,
   repository implementations, AppDbContext, system clock, employee lock.
 - Api -> Application and Infrastructure: composition root, controllers,
-  authentication, Telegram handlers, polling, webhooks, conversation state.
+  authentication, Telegram handlers, polling and conversation state. Webhook is deferred.
 - Test projects may reference any project they test. Unit tests reference Api
   because CallbackDataParser is intentionally located there.
 
@@ -27,12 +27,18 @@ AppException/ErrorCodes provide consistent expected failures for HTTP and Telegr
 
 AppDbContext implements IUnitOfWork. Do not add a forwarding UnitOfWork class.
 All repositories and the PostgreSQL employee-operation lock use the SAME scoped
-AppDbContext/connection. No repository commits independently.
+AppDbContext/connection. Normal staged writes commit through the operation
+transaction. Coordination-version
+increments deliberately commit independently before settings/deactivation transactions;
+this lets waiting bookings detect configuration submissions, including rejected edits.
 
-For booking creation: begin transaction, acquire employee lock, re-read eligibility,
+For booking creation: capture coordination versions, begin transaction, acquire the
+employee lock, re-read eligibility,
 settings/offering and availability, insert the booking, save, commit, then send a
 success message. Acquire the same transaction-scoped lock for schedule mutations.
-The SQL exclusion constraint is an additional database backstop.
+Before saving, lock/reread coordination versions in business-then-staff order and
+reject a changed version. Regional settings writes use the business lock and check
+for any booking under it. The SQL exclusion constraint is an additional backstop.
 
 The initial transaction helper deliberately has no automatic retry strategy. After
 an error, dispose that operation's scope; use a fresh context for conflict recovery.
@@ -46,10 +52,16 @@ AppDbContext transaction semantics and the shared lock. Feature owners implement
 their repositories, services, adapters, tests and registrations. D provides shared
 Telegram infrastructure; A/B/C provide their own feature screens.
 
-The shared entities, mappings, errors, clocks, test host and schema migration are
-implemented. Authentication, feature services and Telegram transports remain
-separate feature tasks. See [shared contracts](shared-contracts.md) for the Task 01
+Nine persisted entities include the original eight business entities and the later
+BookingCoordination entity. Authentication, staff/settings, scheduling, availability,
+booking lifecycle and Telegram polling/management are integrated. Catalogue management
+is partially implemented; consult the release checklist for remaining work.
+See [shared contracts](shared-contracts.md) for the Task 01
 handoff, exact source interfaces, integration boundaries and review status.
 AppDbContextFactory is optional; EF tooling can obtain the context from the API
 host. Any future factory must follow the same configuration rules and must not
 hard-code credentials.
+
+The explicit `--seed-business-settings` setup command invokes the idempotent seeder
+and exits before starting receivers. EF migrations remain a separate operation.
+See [release checklist](task06-release-checklist.md) for verification and review limits.
