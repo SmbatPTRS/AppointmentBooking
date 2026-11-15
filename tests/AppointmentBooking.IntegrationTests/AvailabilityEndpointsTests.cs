@@ -97,16 +97,24 @@ public sealed class AvailabilityEndpointsTests(PostgresFixture fixture)
         }
     }
 
+    public enum ScheduleEdit { ShortenHours, DateOff, WeeklyDayOff }
+
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task BookingAndConflictingHoursEditRecheckStateUnderTheSameLock(bool bookingFirst)
+    [InlineData(true, ScheduleEdit.ShortenHours)]
+    [InlineData(false, ScheduleEdit.ShortenHours)]
+    [InlineData(true, ScheduleEdit.DateOff)]
+    [InlineData(false, ScheduleEdit.DateOff)]
+    [InlineData(true, ScheduleEdit.WeeklyDayOff)]
+    [InlineData(false, ScheduleEdit.WeeklyDayOff)]
+    public async Task BookingAndConflictingScheduleEditRecheckStateUnderTheSameLock(bool bookingFirst, ScheduleEdit change)
     {
         var gate = new LockGate();
         await using var setup = await SeedAsync(30, gate);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         var ct = timeout.Token;
-        var start = TimeZoneInfo.ConvertTimeToUtc(new DateTime(2026, 11, 10, 16, 0, 0), setup.Zone);
+        // Recurring days off must protect bookings several weeks ahead, too.
+        var date = new DateOnly(2026, 11, change == ScheduleEdit.WeeklyDayOff ? 30 : 10);
+        var start = TimeZoneInfo.ConvertTimeToUtc(date.ToDateTime(new TimeOnly(16, 0)), setup.Zone);
         var request = new CreateBookingRequest(Guid.NewGuid(), setup.ClientUser.Id, setup.Offering.Id, start, 100m, 30);
         var proposed = new WorkingHoursModel(new(9, 0), new(16, 0));
         await using var bookingScope = setup.Host.Services.CreateAsyncScope();
@@ -115,7 +123,13 @@ public sealed class AvailabilityEndpointsTests(PostgresFixture fixture)
         var bookings = bookingScope.ServiceProvider.GetRequiredService<BookingService>();
         var schedules = scheduleScope.ServiceProvider.GetRequiredService<ScheduleService>();
         Task Book() => bookings.CreateAsync(new Actor(setup.ClientUser.Id), request, ct);
-        Task Edit() => schedules.SetHoursAsync(new Actor(setup.Staff.UserId), setup.Staff.Id, proposed, ct);
+        var employee = new Actor(setup.Staff.UserId);
+        Task Edit() => change switch
+        {
+            ScheduleEdit.DateOff => schedules.AddDayOffAsync(employee, setup.Staff.Id, new DayOffModel(Date: date), ct),
+            ScheduleEdit.WeeklyDayOff => schedules.AddDayOffAsync(employee, setup.Staff.Id, new DayOffModel(Weekday: date.DayOfWeek), ct),
+            _ => schedules.SetHoursAsync(employee, setup.Staff.Id, proposed, ct)
+        };
         Task first = bookingFirst ? Book() : Edit();
         Task? second = null;
 
@@ -152,7 +166,18 @@ public sealed class AvailabilityEndpointsTests(PostgresFixture fixture)
 
         var hours = await db.WorkingHours.SingleAsync(h => h.StaffMemberId == setup.Staff.Id, ct);
         var stored = await db.Bookings.Where(b => b.StaffMemberId == setup.Staff.Id).ToListAsync(ct);
-        Assert.Equal(new TimeOnly(bookingFirst ? 18 : 16, 0), hours.ClosesAt);
+        Assert.Equal(new TimeOnly(!bookingFirst && change == ScheduleEdit.ShortenHours ? 16 : 18, 0), hours.ClosesAt);
+
+        var daysOff = await db.StaffDaysOff.Where(d => d.StaffMemberId == setup.Staff.Id).ToListAsync(ct);
+        if (bookingFirst || change == ScheduleEdit.ShortenHours)
+            Assert.Empty(daysOff);
+        else
+        {
+            var saved = Assert.Single(daysOff);
+            Assert.Equal(change == ScheduleEdit.DateOff ? date : (DateOnly?)null, saved.Date);
+            Assert.Equal(change == ScheduleEdit.WeeklyDayOff ? date.DayOfWeek : (DayOfWeek?)null, saved.Weekday);
+        }
+
         if (bookingFirst)
             Assert.Equal(start, Assert.Single(stored).StartsAtUtc);
         else
