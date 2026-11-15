@@ -1,164 +1,153 @@
 # Setup and deployment
 
-## Scope and prerequisites
+## Prerequisites and current scope
 
-This is the corrected foundation. It provides the solution, EF context/transaction
-boundary, health endpoints, Swagger and configuration. Feature code, entity mappings,
-seed data and migrations are added by their owners; the complete booking bot is not
-implemented yet. Install a stable .NET 8 SDK in the 8.0.4xx feature band or later .NET 8
-band accepted by global.json. Use PostgreSQL 16 for matching development environments.
-Docker Compose v2 is optional for normal local development.
+Use a stable .NET 8 SDK accepted by `global.json`, PostgreSQL 16, and Bash for these
+examples. Docker Compose v2 is optional for running the application database;
+Docker is required by the current integration-test fixture. On Smb's machine,
+`/usr/lib/dotnet/dotnet` selects the verified SDK 8.0.425; substitute that executable
+for `dotnet` below if the default PATH selects another installation.
 
-Commands below use Bash and start from the repository root unless stated otherwise.
-Use a teammate-approved supported patch baseline before deployment. The explicit
-package versions in this proposal are compatibility pins, not a claim of latest releases.
+Identity, staff/settings management, schedule management, availability, booking
+lifecycle and Telegram polling are implemented. Catalogue browsing and shared-service
+creation are implemented; remaining service/offering management belongs to B.
+Webhook is deferred and is not a release requirement. Select Polling when enabling
+Telegram; selecting Webhook currently provides no update receiver.
 
-## Configure
+## Configure locally
+
+From the repository root:
 
 ```bash
 cp src/AppointmentBooking.Api/.env.example src/AppointmentBooking.Api/.env
 ```
 
-Edit the local .env. Replace the example password in BOTH POSTGRES_PASSWORD and the
-connection string. The latter is explicit; this setup does not expand POSTGRES_*
-inside it. Use the owner's numeric Telegram user ID when identity is implemented.
-Keep Telegram disabled until its services are implemented and configured.
+Edit this ignored file. Replace the password in BOTH `POSTGRES_PASSWORD` and the
+explicit `ConnectionStrings__DefaultConnection`; the connection string does not
+expand other variables. Set `Owner__TelegramUserId` to the owner's numeric sender
+ID. Keep `Telegram__Enabled=false` during database setup.
 
-Compose reads this file because commands explicitly pass --env-file. ASP.NET Core
-does not load .env automatically; the supplied Program.cs loads it with DotNetEnv
-in Development. Existing process environment variables take precedence.
+Development loads `.env` from the API content root; existing environment values
+win. Production and containers receive environment variables/secrets explicitly.
+Do not commit credentials or enable multiple polling processes for one bot.
 
-## Option A: database in Docker, application in IDE/CLI
+## Prepare PostgreSQL
+
+For Docker PostgreSQL:
 
 ```bash
 docker compose --env-file src/AppointmentBooking.Api/.env up -d --wait postgres
-dotnet tool restore
-dotnet restore AppointmentBooking.sln
-dotnet build AppointmentBooking.sln
-dotnet test tests/AppointmentBooking.UnitTests/AppointmentBooking.UnitTests.csproj
 ```
 
-Run from the API directory so content root and .env discovery are explicit:
-
-```bash
-cd src/AppointmentBooking.Api
-dotnet run --launch-profile http
-```
-
-Open http://localhost:5080/swagger, /health and /health/db. The first health endpoint
-shows host liveness; the second checks database connectivity, not schema readiness.
-The bootstrap can connect to an empty database. Tests are added with their features;
-an empty test project is not evidence of verified business behavior.
-
-## Option B: installed PostgreSQL
-
-Skip the Compose startup. As a PostgreSQL administrator, create a development role
-and database (replace the example password):
+For installed PostgreSQL, create a role/database as an administrator, replacing the
+example password locally:
 
 ```sql
 CREATE ROLE appointment_app WITH LOGIN PASSWORD 'replace_this_local_password';
 CREATE DATABASE appointmentbooking OWNER appointment_app;
 ```
 
-Use the same localhost connection string, build and run commands. Docker is not
-required for this development path. Do not run two servers on the same host port.
-If a container uses POSTGRES_PORT=5433, also change the local connection string to
-Port=5433. Container-to-container traffic still uses Host=postgres;Port=5432.
+Use the matching local connection string. Do not start two servers on one port.
+The default localhost port is 5432; changing `POSTGRES_PORT` also requires changing
+the local connection string. Container-to-container connections use `postgres:5432`.
+The migration role must be able to install `btree_gist`.
 
-## Migrations and seed data
+## Build, migrate and seed
 
-Do not generate empty migrations just to populate the planned folder.
-After the first mappings are merged, A generates the initial migration from the
-API directory. Other members apply the committed migrations rather than regenerating:
+From the repository root:
 
 ```bash
-# From src/AppointmentBooking.Api
-ASPNETCORE_ENVIRONMENT=Development dotnet ef migrations add InitialCreate --project ../AppointmentBooking.Infrastructure --startup-project . --output-dir Persistence/Migrations
+dotnet tool restore
+dotnet restore AppointmentBooking.sln
+dotnet build AppointmentBooking.sln --configuration Release
+cd src/AppointmentBooking.Api
 ASPNETCORE_ENVIRONMENT=Development dotnet ef database update --project ../AppointmentBooking.Infrastructure --startup-project .
+ASPNETCORE_ENVIRONMENT=Development dotnet run --no-launch-profile --configuration Release --no-build -- --seed-business-settings --Seed:DisplayName="Appointment Studio" --Seed:StaffLabel="Employee" --Seed:TimeZoneId="Asia/Yerevan" --Seed:CurrencyCode="AMD"
 ```
 
-Run migration generation only when owning the coordinated model change. A fresh DB
-must receive all migrations and then the explicit, idempotent DatabaseSeeder once it
-exists, including BusinessSettings. Do not mix EnsureCreated with migrations. Do not
-silently apply schema updates on every production application instance at startup.
+Review the target connection before applying migrations to an existing database.
+Back up valuable data first. Teammates apply committed migrations; only A generates
+new migrations for coordinated model changes. Never mix `EnsureCreated` with migrations.
+Normal server startup does not automatically migrate or seed.
 
-Task 13's migration must enable btree_gist and add the overlap constraint after
-creating the bookings table. With the explicit DBML names and string status mapping:
+The explicit seed command validates four supplied defaults, invokes the existing
+transactional DatabaseSeeder, then exits without starting HTTP or Telegram. Values
+may alternatively be supplied as `Seed__DisplayName`, `Seed__StaffLabel`,
+`Seed__TimeZoneId`, `Seed__CurrencyCode` environment variables. Repeating it preserves
+all existing settings and coordination versions. It creates settings/business
+coordination only, not demo users, staff or offerings.
 
-```sql
-CREATE EXTENSION IF NOT EXISTS btree_gist;
-ALTER TABLE bookings
-ADD CONSTRAINT bookings_no_confirmed_overlap
-EXCLUDE USING gist (
-    staff_member_id WITH =,
-    tstzrange(starts_at_utc, ends_at_utc, '[)') WITH &&
-) WHERE (status = 'Confirmed');
+Current migrations are `20261102120326_InitialCreate` and
+`20261107171452_AddBookingCoordination`. The first installs `btree_gist` and
+`ex_bookings_staff_confirmed_overlap` for Confirmed `[start,end)` intervals. The
+second backfills version-zero coordination rows for existing settings and staff.
+Older comment-only placeholder files do not represent another migration. Do not
+execute a second manual overlap-constraint script.
+
+## Run and register identities
+
+From `src/AppointmentBooking.Api`:
+
+```bash
+dotnet run --launch-profile http
 ```
 
-Place this SQL in migrationBuilder.Sql(...), not in a manual per-developer setup step.
-The extension must be available to the migration role (ask the database administrator
-if extension creation is restricted). Add its Down behavior deliberately; do not drop
-an extension used by unrelated database objects. Add the other CHECK/unique/foreign-key
-constraints described in database.dbml. DBML notes alone do not enforce any rule.
+In Development, open `http://localhost:5080/swagger`. `/health` checks liveness;
+`/health/db` checks database connectivity, not schema completeness.
+
+To register real users, configure a bot token in secret configuration, set
+`Telegram__Enabled=true` and `Telegram__Mode=Polling`, and restart. The owner and
+prospective employees/clients each send `/start`; the reply includes their Telegram
+sender ID. The owner can then add staff through Staff management. Staff must already
+have opened the bot. Remaining offering-management screens are pending B work;
+a fully UI-driven catalogue demonstration is not yet accepted.
+
+For Swagger/API access, configure separate secret keys for registered identities:
+`ApiAccess__Keys__0__Key` and `ApiAccess__Keys__0__TelegramUserId`, then increment
+indices for other users. Restart after changing configuration. In Swagger choose
+Authorize / ApiKey; requests send `X-Api-Key`. A key for an unregistered user returns
+401. A valid identity lacking permission returns 403. Use distinct owner, employee
+and client identities, rather than a shared administrator key.
+
+Polling removes a previously registered webhook without dropping pending updates.
+Stop any other receiver before starting this process. Live polling and deployment
+rehearsal remain D/team acceptance work; no HTTPS webhook setup is required.
+
+## Tests and CI
+
+From the repository root, with Docker available:
+
+```bash
+dotnet test AppointmentBooking.sln --configuration Release --no-restore
+```
+
+The PostgreSQL fixture creates disposable test containers and applies migrations;
+never substitute a valuable development database. It currently does not accept an
+installed-PostgreSQL test connection. Unit tests can run without Docker.
+
+The current CI restores/builds the solution and runs unit tests only. D still needs
+to add integration CI and record a successful run. See
+[release acceptance](task06-release-checklist.md) for local results and pending work.
 
 ## Full development Compose setup
 
-After applying migrations to this database, start the API too:
+After migrations and seed have been applied to the selected database:
 
 ```bash
 docker compose --env-file src/AppointmentBooking.Api/.env --profile full up -d --build --wait
 ```
 
-Open http://localhost:8080/swagger. This is a LOCAL development configuration, with
-loopback-bound ports and development Swagger. API .env is excluded from the image;
-Compose explicitly supplies the required settings. Extend its environment mapping
-with the per-user API-key settings below if the container needs protected HTTP endpoints.
-Use deployment environment/secrets for those values; never copy secret configuration
-into the Dockerfile or a tracked appsettings file.
+Swagger is at `http://localhost:8080/swagger`. Compose explicitly maps database,
+Telegram and owner settings. It does not currently map per-user API keys: D must
+supply the appropriate environment/secrets mapping for protected HTTP demonstrations
+in the container. The API's `.env` file is excluded from the image.
 
-The PostgreSQL volume preserves data across container recreation. Changing an
-initialization password in .env does not change an already-created database role.
-`docker compose ... down` preserves the volume; `down -v` deletes database data.
+The PostgreSQL volume preserves data. Changing an initialization password in `.env`
+does not change an existing role. `docker compose ... down` preserves the volume;
+`down -v` deletes it. Never delete an existing volume to repair setup without consent.
 
-## Telegram deployment, after Tasks 19–24
-
-- Polling: enable Telegram, provide token, select Polling. Remove the old webhook
-  without dropping pending updates before starting polling. Do not start webhook mode.
-- Webhook: select Webhook, provide token, HTTPS webhook URL and secret, expose the API
-  through a configured HTTPS reverse proxy/tunnel, register webhook at startup, and
-  validate its secret header. Do not start polling.
-- The local Compose file does not provide public HTTPS by itself.
-- Stop the old receiver before switching modes; do not start two receivers for one bot.
-- Configure graceful shutdown, per-operation scopes and state expiration.
-
-## CI progression
-
-Initial CI restores/builds all projects and runs unit tests. Task 24 adds a separate
-integration job using PostgreSQL 16, migrations and test-only data. The included
-Testcontainers.PostgreSql package supports a Docker-backed fixture; installing the
-package alone does not implement the fixture or run database tests. If local integration
-tests must also work without Docker, PostgresFixture should accept an explicit test-only
-connection string and use Testcontainers only when none is supplied. Never point tests
-at a development database containing data you need.
-
-A Linux GitHub-hosted runner can run the Testcontainers suite once that fixture exists:
-
-```bash
-dotnet test tests/AppointmentBooking.IntegrationTests/AppointmentBooking.IntegrationTests.csproj --configuration Release --no-build
-```
-
-## Moving an installed database into a container
-
-For an empty development DB, simply apply migrations and seed. For existing data,
-create a pg_dump custom-format backup and pg_restore it into a fresh destination
-instead of pre-creating the same schema with migrations. Data belongs in the volume;
-do not bake a live database into the application image.
-
-### HTTP API keys
-
-Configure each key in the deployment environment using
-`ApiAccess__Keys__0__Key` and `ApiAccess__Keys__0__TelegramUserId`. Increment the
-index for additional keys. Each Telegram ID must belong to an existing registered
-user. Send the key in the `X-Api-Key` header. In development Swagger, select
-**Authorize** and enter the key for **ApiKey**. Protected endpoints opt into the
-`ApiKey` authorization policy. The Telegram webhook uses its own secret.
+For moving valuable data to a fresh container, use `pg_dump`/`pg_restore` instead of
+pre-creating the same schema with migrations. Do not bake database data into images.
+Installed-PostgreSQL and full Compose rehearsals are pending. A clean-source local
+restore/build, EF migration/seed and host-health rehearsal passed using disposable
+PostgreSQL, with polling disabled; see the release checklist.

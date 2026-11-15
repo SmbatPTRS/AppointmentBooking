@@ -5,7 +5,6 @@ using AppointmentBooking.Api.Authentication;
 using Microsoft.AspNetCore.Authentication;
 using AppointmentBooking.Api.Configuration;
 using AppointmentBooking.Api.Telegram;
-using AppointmentBooking.Api.Telegram.Handlers;
 using AppointmentBooking.Application.Availability;
 using AppointmentBooking.Application.Bookings;
 using AppointmentBooking.Application.Business;
@@ -21,7 +20,9 @@ using AppointmentBooking.Api.Telegram.Handlers;
 // Protected endpoints opt into the API-key policy. Keep it off unrelated routes.
 AppContext.SetSwitch("Microsoft.AspNetCore.Authentication.SuppressAutoDefaultScheme", true);
 
-var builder = WebApplication.CreateBuilder(args);
+var seedOnly = args.Contains("--seed-business-settings", StringComparer.Ordinal);
+var configurationArgs = args.Where(arg => arg != "--seed-business-settings").ToArray();
+var builder = WebApplication.CreateBuilder(configurationArgs);
 
 // Local development only; a deployed container receives environment variables.
 var envFile = Path.Combine(builder.Environment.ContentRootPath, ".env");
@@ -29,10 +30,26 @@ if (builder.Environment.IsDevelopment() && File.Exists(envFile))
 {
     DotNetEnv.Env.NoClobber().Load(envFile);
     builder.Configuration.AddEnvironmentVariables();
-    builder.Configuration.AddCommandLine(args);
+    builder.Configuration.AddCommandLine(configurationArgs);
 }
 
 builder.Services.AddInfrastructure(builder.Configuration);
+if (seedOnly)
+{
+    // Explicit setup operation: migrations are applied separately by EF tooling.
+    // Validate all supplied defaults before opening a database connection.
+    string RequiredSeedValue(string name) => builder.Configuration[$"Seed:{name}"]
+        ?? throw new InvalidOperationException($"Seed:{name} is required for --seed-business-settings.");
+    var defaults = new AppointmentBooking.Domain.Entities.BusinessSettings(
+        RequiredSeedValue("DisplayName"), RequiredSeedValue("StaffLabel"),
+        RequiredSeedValue("TimeZoneId"), RequiredSeedValue("CurrencyCode"));
+    await using var setup = builder.Build();
+    await using var scope = setup.Services.CreateAsyncScope();
+    await new DatabaseSeeder(scope.ServiceProvider.GetRequiredService<AppDbContext>())
+        .SeedBusinessSettingsAsync(defaults);
+    Console.WriteLine("Business settings seed completed; existing settings were preserved.");
+    return;
+}
 builder.Services.AddTelegramInfrastructure();
 // Member B: customer catalogue route and its application service.
 builder.Services.AddScoped<AppointmentBooking.Application.Catalog.CatalogService>();
