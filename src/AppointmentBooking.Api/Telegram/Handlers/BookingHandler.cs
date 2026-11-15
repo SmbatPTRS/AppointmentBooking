@@ -59,6 +59,30 @@ public sealed class BookingHandler(
             return;
         }
         
+        
+        switch (context.State.Step)
+        {
+            case "book.staff":
+                await HandleBookingStaffAsync(context, ct);
+                return;
+
+            case "book.service":
+                await HandleBookingServiceAsync(context, ct);
+                return;
+
+            case "book.date":
+                await HandleBookingDateAsync(context, ct);
+                return;
+
+            case "book.time":
+                await HandleBookingTimeAsync(context, ct);
+                return;
+
+            case "book.confirm":
+                await HandleConfirmationAsync(context, ct);
+                return;
+        }
+        
     }
 
     private async Task RenderCurrentScreenAsync(TelegramHandlerContext context, CancellationToken ct)
