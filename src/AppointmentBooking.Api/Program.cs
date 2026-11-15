@@ -36,6 +36,8 @@ builder.Services.AddTelegramInfrastructure();
 // Member B: customer catalogue route and its application service.
 builder.Services.AddScoped<AppointmentBooking.Application.Catalog.CatalogService>();
 builder.Services.AddScoped<ITelegramHandler, AppointmentBooking.Api.Telegram.Handlers.CatalogHandler>();
+builder.Services.AddScoped<ITelegramHandler, SharedServicesHandler>();
+builder.Services.AddScoped<ITelegramHandler, CreateSharedServiceHandler>();
 builder.Services.AddOptions<OwnerOptions>()
     .BindConfiguration(OwnerOptions.SectionName)
     .Validate(options => options.TelegramUserId >= 0, "Owner:TelegramUserId must be zero or a positive Telegram user ID.")
