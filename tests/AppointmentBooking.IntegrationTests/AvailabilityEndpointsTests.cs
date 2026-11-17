@@ -1,3 +1,6 @@
+using AppointmentBooking.Application.Abstractions;
+using AppointmentBooking.Application.Scheduling;
+using AppointmentBooking.Infrastructure.Transactions;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -38,7 +41,7 @@ public sealed class AvailabilityEndpointsTests(PostgresFixture fixture)
         public async ValueTask DisposeAsync() { await Host.DisposeAsync(); await Factory.DisposeAsync(); }
     }
 
-    private async Task<Setup> SeedAsync(int duration = 40)
+    private async Task<Setup> SeedAsync(int duration = 40, LockGate? gate = null)
     {
         await using var db = fixture.CreateContext();
         var clock = new Clock();
@@ -60,11 +63,127 @@ public sealed class AvailabilityEndpointsTests(PostgresFixture fixture)
             {
                 ["ApiAccess:Keys:0:Key"] = "availability-test",
                 ["ApiAccess:Keys:0:TelegramUserId"] = customer.TelegramUserId.ToString(),
+                ["ApiAccess:Keys:1:Key"] = "availability-employee",
+                ["ApiAccess:Keys:1:TelegramUserId"] = employee.TelegramUserId.ToString(),
                 ["Booking:SlotStepMinutes"] = "15", ["Booking:MaxAdvanceDays"] = "30"
             }));
-            builder.ConfigureTestServices(services => services.AddSingleton<IClock>(clock));
+            builder.ConfigureTestServices(services =>
+            {
+                services.AddSingleton<IClock>(clock);
+                if (gate is not null)
+                    services.AddScoped<IStaffOperationLock>(provider => new GatedStaffLock(
+                        new PostgresStaffOperationLock(provider.GetRequiredService<AppDbContext>()), gate));
+            });
         });
         return new(factory, host, customer, staff, offering, TimeZoneInfo.FindSystemTimeZoneById(business.TimeZoneId));
+    }
+
+    private sealed class LockGate
+    {
+        public TaskCompletionSource Held { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int Attempts;
+    }
+
+    private sealed class GatedStaffLock(PostgresStaffOperationLock inner, LockGate gate) : IStaffOperationLock
+    {
+        public async Task AcquireAsync(Guid staffId, CancellationToken ct)
+        {
+            var attempt = Interlocked.Increment(ref gate.Attempts);
+            await inner.AcquireAsync(staffId, ct);
+            if (attempt == 1)
+            {
+                gate.Held.TrySetResult();
+                await gate.Release.Task.WaitAsync(ct);
+            }
+        }
+    }
+
+    public enum ScheduleEdit { ShortenHours, DateOff, WeeklyDayOff }
+
+    [Theory]
+    [InlineData(true, ScheduleEdit.ShortenHours)]
+    [InlineData(false, ScheduleEdit.ShortenHours)]
+    [InlineData(true, ScheduleEdit.DateOff)]
+    [InlineData(false, ScheduleEdit.DateOff)]
+    [InlineData(true, ScheduleEdit.WeeklyDayOff)]
+    [InlineData(false, ScheduleEdit.WeeklyDayOff)]
+    public async Task BookingAndConflictingScheduleEditRecheckStateUnderTheSameLock(bool bookingFirst, ScheduleEdit change)
+    {
+        var gate = new LockGate();
+        await using var setup = await SeedAsync(30, gate);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var ct = timeout.Token;
+        // Recurring days off must protect bookings several weeks ahead, too.
+        var date = new DateOnly(2026, 11, change == ScheduleEdit.WeeklyDayOff ? 30 : 10);
+        var start = TimeZoneInfo.ConvertTimeToUtc(date.ToDateTime(new TimeOnly(16, 0)), setup.Zone);
+        var request = new CreateBookingRequest(Guid.NewGuid(), setup.ClientUser.Id, setup.Offering.Id, start, 100m, 30);
+        var proposed = new WorkingHoursModel(new(9, 0), new(16, 0));
+        await using var bookingScope = setup.Host.Services.CreateAsyncScope();
+        await using var scheduleScope = setup.Host.Services.CreateAsyncScope();
+        await using var db = fixture.CreateContext();
+        var bookings = bookingScope.ServiceProvider.GetRequiredService<BookingService>();
+        var schedules = scheduleScope.ServiceProvider.GetRequiredService<ScheduleService>();
+        Task Book() => bookings.CreateAsync(new Actor(setup.ClientUser.Id), request, ct);
+        var employee = new Actor(setup.Staff.UserId);
+        Task Edit() => change switch
+        {
+            ScheduleEdit.DateOff => schedules.AddDayOffAsync(employee, setup.Staff.Id, new DayOffModel(Date: date), ct),
+            ScheduleEdit.WeeklyDayOff => schedules.AddDayOffAsync(employee, setup.Staff.Id, new DayOffModel(Weekday: date.DayOfWeek), ct),
+            _ => schedules.SetHoursAsync(employee, setup.Staff.Id, proposed, ct)
+        };
+        Task first = bookingFirst ? Book() : Edit();
+        Task? second = null;
+
+        try
+        {
+            await Task.WhenAny(first, gate.Held.Task).WaitAsync(ct);
+            if (first.IsCompleted) await first;
+            Assert.True(gate.Held.Task.IsCompletedSuccessfully, "The first operation must acquire the employee lock.");
+            second = bookingFirst ? Edit() : Book();
+            while (!await db.Database.SqlQueryRaw<bool>(
+                """SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND NOT granted) AS "Value" """)
+                .SingleAsync(ct))
+            {
+                Assert.False(second.IsCompleted, "The second operation must wait for the employee lock.");
+                await Task.Delay(10, ct);
+            }
+        }
+        catch
+        {
+            await timeout.CancelAsync();
+            try { await Task.WhenAll(first, second ?? Task.CompletedTask); }
+            catch { /* Preserve the original assertion or cancellation. */ }
+            throw;
+        }
+        finally
+        {
+            gate.Release.TrySetResult();
+        }
+
+        await first;
+        var error = await Assert.ThrowsAsync<AppException>(() => second!);
+        Assert.Equal(AppErrorKind.Conflict, error.Kind);
+        Assert.Equal(bookingFirst ? ErrorCodes.ScheduleConflictsWithBookings : ErrorCodes.TimeUnavailable, error.Code);
+
+        var hours = await db.WorkingHours.SingleAsync(h => h.StaffMemberId == setup.Staff.Id, ct);
+        var stored = await db.Bookings.Where(b => b.StaffMemberId == setup.Staff.Id).ToListAsync(ct);
+        Assert.Equal(new TimeOnly(!bookingFirst && change == ScheduleEdit.ShortenHours ? 16 : 18, 0), hours.ClosesAt);
+
+        var daysOff = await db.StaffDaysOff.Where(d => d.StaffMemberId == setup.Staff.Id).ToListAsync(ct);
+        if (bookingFirst || change == ScheduleEdit.ShortenHours)
+            Assert.Empty(daysOff);
+        else
+        {
+            var saved = Assert.Single(daysOff);
+            Assert.Equal(change == ScheduleEdit.DateOff ? date : (DateOnly?)null, saved.Date);
+            Assert.Equal(change == ScheduleEdit.WeeklyDayOff ? date.DayOfWeek : (DayOfWeek?)null, saved.Weekday);
+        }
+
+        if (bookingFirst)
+            Assert.Equal(start, Assert.Single(stored).StartsAtUtc);
+        else
+            Assert.Empty(stored);
     }
 
     private static async Task AssertError(HttpResponseMessage response, HttpStatusCode status, string? code = null)
@@ -208,6 +327,48 @@ public sealed class AvailabilityEndpointsTests(PostgresFixture fixture)
         await AssertError(await client.GetAsync(setup.Url().Replace(name + "=" + value, name + "=" + Guid.Empty)), HttpStatusCode.BadRequest, ErrorCodes.ValidationFailed);
         await AssertError(await client.GetAsync(setup.Url().Replace(name + "=" + value, name + "=invalid")), HttpStatusCode.BadRequest);
         await AssertError(await client.GetAsync(setup.Url().Replace(name + "=" + value, "unused=1")), HttpStatusCode.BadRequest, ErrorCodes.ValidationFailed);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RemovingDayOffRestoresSlotsOnlyForTheEmployeeWhoRemovedIt(bool recurring)
+    {
+        await using var first = await SeedAsync(30);
+        await using var second = await SeedAsync(30);
+        using var customer = first.Client();
+        using var employee = first.Client("availability-employee");
+        using var otherEmployee = second.Client("availability-employee");
+        var date = new DateOnly(2026, 11, 10);
+        var day = recurring ? new DayOffModel(Weekday: date.DayOfWeek) : new DayOffModel(Date: date);
+        var firstDays = $"/api/staff/{first.Staff.Id}/days-off";
+        var secondDays = $"/api/staff/{second.Staff.Id}/days-off";
+
+        var before = (await customer.GetFromJsonAsync<AvailableSlot[]>(first.Url()))!;
+        Assert.NotEmpty(before);
+        Assert.NotEmpty((await customer.GetFromJsonAsync<AvailableSlot[]>(second.Url()))!);
+
+        using var firstAdded = await employee.PostAsJsonAsync(firstDays, day);
+        using var secondAdded = await otherEmployee.PostAsJsonAsync(secondDays, day);
+        Assert.Equal(HttpStatusCode.Created, firstAdded.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, secondAdded.StatusCode);
+        var firstOff = (await firstAdded.Content.ReadFromJsonAsync<DayOffDto>())!;
+        var secondOff = (await secondAdded.Content.ReadFromJsonAsync<DayOffDto>())!;
+        Assert.Empty((await customer.GetFromJsonAsync<AvailableSlot[]>(first.Url()))!);
+        Assert.Empty((await customer.GetFromJsonAsync<AvailableSlot[]>(second.Url()))!);
+
+        // A foreign day-off ID must not be usable even under the caller's own staff route.
+        await AssertError(await employee.DeleteAsync($"{firstDays}/{secondOff.Id}"),
+            HttpStatusCode.NotFound, ErrorCodes.DayOffNotFound);
+        await AssertError(await employee.DeleteAsync($"{secondDays}/{secondOff.Id}"),
+            HttpStatusCode.Forbidden);
+        using var deleted = await employee.DeleteAsync($"{firstDays}/{firstOff.Id}");
+        Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
+
+        Assert.Equal(before, (await customer.GetFromJsonAsync<AvailableSlot[]>(first.Url()))!);
+        Assert.Empty((await customer.GetFromJsonAsync<AvailableSlot[]>(second.Url()))!);
+        Assert.Empty((await employee.GetFromJsonAsync<DayOffDto[]>(firstDays))!);
+        Assert.Equal(secondOff, Assert.Single((await otherEmployee.GetFromJsonAsync<DayOffDto[]>(secondDays))!));
     }
 
     [Fact]
