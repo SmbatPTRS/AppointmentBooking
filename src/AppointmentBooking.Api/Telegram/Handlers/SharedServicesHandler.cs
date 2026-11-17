@@ -9,18 +9,30 @@ public sealed class SharedServicesHandler(CatalogService catalog, ITelegramMessa
     IClock clock) : ITelegramHandler
 {
     public string Route => "services";
+    internal const string ResultKey = "services.saved-result";
     private const string PageKey = "services.page";
     private const int PageSize = 10;
 
     public async Task HandleAsync(TelegramHandlerContext context, CancellationToken ct)
     {
         var state = context.State;
-        if (!context.IsRetry) state.ClearFeatureData(Route);
-        if (!context.IsNavigation && context.Callback is null && context.Text?.StartsWith('/') != true)
+        if (!context.IsRetry)
+        {
+            state.ClearFeatureData(Route);
+            state.ClearFeatureData(ResultKey);
+        }
+        if (!context.IsRetry && !context.IsNavigation && context.Callback is null && context.Text?.StartsWith('/') != true)
             return;
 
         var services = await catalog.ListServicesForOwnerAsync(context.Caller.Actor, ct);
-        if (!context.IsNavigation && !state.GetFeatureData<bool>(Route))
+        // The dispatcher retries this destination after a committed create/rename.
+        // Restore the reply without repeating the mutation or changing navigation.
+        if (context.IsRetryRender && state.GetFeatureData<string>(ResultKey) is { } result)
+        {
+            await sender.SendMenuAsync(context.ChatId, result, NavigationKeyboard.Create(state), ct);
+            return;
+        }
+        if (!context.IsNavigation && !context.IsRetryRender && !state.GetFeatureData<bool>(Route))
         {
             if (context.ItemId is { } anchor)
             {
@@ -62,7 +74,11 @@ public sealed class CreateSharedServiceHandler(CatalogService catalog, IAccessSe
     public async Task HandleAsync(TelegramHandlerContext context, CancellationToken ct)
     {
         var state = context.State;
-        if (!context.IsRetry) state.ClearFeatureData(Route);
+        if (!context.IsRetry)
+        {
+            state.ClearFeatureData(Route);
+            state.ClearFeatureData(SharedServicesHandler.ResultKey);
+        }
         await access.RequireOwnerAsync(context.Caller.Actor, ct);
 
         var progress = state.GetFeatureData<CreateProgress>(Route);
@@ -89,6 +105,7 @@ public sealed class CreateSharedServiceHandler(CatalogService catalog, IAccessSe
                 // Leave the input route before sending, so ordinary text cannot create another service.
                 state.BeginStep("services", clock.UtcNow);
                 reply = $"Service created: {result.Name}.";
+                state.SetFeatureData(SharedServicesHandler.ResultKey, reply);
             }
             catch (AppException error) when (error.Code == ErrorCodes.ValidationFailed)
             {

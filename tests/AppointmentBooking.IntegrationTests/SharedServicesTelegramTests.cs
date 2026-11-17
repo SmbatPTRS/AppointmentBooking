@@ -23,8 +23,10 @@ public sealed class SharedServicesTelegramTests(PostgresFixture fixture)
         var update = bot.Message("  " + name + "  ", Owner);
         bot.Sender.FailNextSend(new IOException("Reply failed"));
         await Assert.ThrowsAsync<IOException>(() => bot.Deliver(update));
+        var repliesBeforeRetry = bot.Sender.SentMenus.Count;
         await bot.Deliver(update);
-        Assert.Contains(name, bot.Sender.SentMenus.Last().Text);
+        Assert.Equal(repliesBeforeRetry + 1, bot.Sender.SentMenus.Count);
+        Assert.Contains($"Service created: {name}.", bot.Sender.SentMenus.Last().Text);
         await bot.Send("ordinary text", Owner);
         await bot.Click("Back", Owner);
         Assert.Contains(bot.Sender.SentMenus.Last().Buttons, b => b.Text == "Create service");
@@ -32,6 +34,56 @@ public sealed class SharedServicesTelegramTests(PostgresFixture fixture)
         await using var db = fixture.CreateContext();
         Assert.True((await db.Services.SingleAsync(s => s.Name == name)).IsActive);
         Assert.False(await db.Services.AnyAsync(s => s.Name == "ordinary text"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RepeatedReplyFailuresRecoverNavigationWithoutReplayingWrites(bool rename)
+    {
+        await using var db = fixture.CreateContext();
+        var original = new Service("Retry-" + Guid.NewGuid());
+        db.Services.Add(original);
+        await db.SaveChangesAsync();
+        await using var bot = new TelegramManagementBot(fixture.ConnectionString, Owner);
+        await bot.Send("/services", Owner);
+        if (rename)
+        {
+            while (!bot.Sender.SentMenus.Last().Buttons.Any(b => b.Text == original.Name + " (active)"))
+                await bot.Click("Next page", Owner);
+            await bot.Click(original.Name + " (active)", Owner);
+        }
+        else
+            await bot.Click("Create service", Owner);
+
+        var name = "Saved-" + Guid.NewGuid();
+        var update = bot.Message(name, Owner);
+        var sentBefore = bot.Sender.SentMenus.Count;
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            bot.Sender.FailNextSend(new IOException("Reply failed"));
+            await Assert.ThrowsAsync<IOException>(() => bot.Deliver(update));
+            Assert.Equal(sentBefore, bot.Sender.SentMenus.Count);
+            var saved = await db.Services.AsNoTracking().SingleAsync(s => s.Name == name);
+            if (rename) Assert.Equal(original.Id, saved.Id);
+        }
+        await bot.Deliver(update);
+        Assert.Equal(sentBefore + 1, bot.Sender.SentMenus.Count);
+        Assert.Contains(rename ? $"Service renamed to {name}." : $"Service created: {name}.",
+            bot.Sender.SentMenus.Last().Text);
+        var back = bot.Button("Back");
+        await bot.Send("ordinary message", Owner);
+        Assert.Equal(sentBefore + 1, bot.Sender.SentMenus.Count);
+        Assert.Equal(back, bot.Button("Back"));
+        await bot.Deliver(bot.Callback(back, Owner));
+        Assert.Contains("Shared services", bot.Sender.SentMenus.Last().Text);
+        Assert.DoesNotContain("Service created:", bot.Sender.SentMenus.Last().Text);
+        Assert.DoesNotContain("Service renamed to", bot.Sender.SentMenus.Last().Text);
+        await bot.Click("Create service", Owner);
+        Assert.Contains("Type a service name", bot.Sender.SentMenus.Last().Text);
+        await bot.Click("Cancel", Owner);
+        Assert.Equal(1, await db.Services.CountAsync(s => s.Name == name));
+        Assert.False(await db.Services.AnyAsync(s => s.Name == "ordinary message"));
     }
 
     [Fact]
@@ -93,7 +145,10 @@ public sealed class SharedServicesTelegramTests(PostgresFixture fixture)
 
         renamed.Rename("zz-Later");
         await db.SaveChangesAsync();
+        var repliesBeforeRetry = bot.Sender.SentMenus.Count;
         await bot.Deliver(update);
+        Assert.Equal(repliesBeforeRetry + 1, bot.Sender.SentMenus.Count);
+        Assert.Contains("Service renamed to zz-Renamed.", bot.Sender.SentMenus.Last().Text);
         Assert.Equal("zz-Later", (await db.Services.AsNoTracking().SingleAsync(s => s.Id == service.Id)).Name);
 
         await bot.Click("Back", Owner);

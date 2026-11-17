@@ -4,6 +4,19 @@ namespace AppointmentBooking.Api.Telegram.State;
 
 public readonly record struct ConversationKey(long TelegramUserId, long ChatId);
 
+/// <summary>
+/// Values shown during booking confirmation. These are client expectations; the
+/// booking service still revalidates the offering and slot before committing.
+/// </summary>
+public sealed record BookingSelection(
+    Guid StaffServiceId,
+    DateOnly? Date,
+    DateTimeOffset? SlotStartUtc,
+    DateTimeOffset? SlotEndUtc,
+    string? ServiceName,
+    decimal? ExpectedPrice,
+    int? ExpectedDurationMinutes);
+
 /// <summary>Only navigation and scalar selections belong here; never EF entities or scopes.</summary>
 public sealed class ConversationState
 {
@@ -12,13 +25,14 @@ public sealed class ConversationState
     public DateTime ExpiresAtUtc { get; private set; }
     public Dictionary<string, string> Selections { get; } = [];
     public Guid? ConfirmationRequestId { get; set; }
+    public BookingSelection? Booking { get; private set; }
     private readonly HashSet<string> allowedCallbacks = [];
     private readonly HashSet<string> plainCallbacks = [];
     private readonly Dictionary<string, JsonElement> featureData = [];
     private readonly Dictionary<string, (string Route, Guid Id)> items = [];
     private readonly List<Screen> history = [];
     internal (string Key, string Route)? PendingNavigation { get; set; }
-    internal (string Key, string Route, Guid? ItemId)? PendingDispatch { get; set; }
+    internal (string Key, string SourceRoute, string DestinationRoute, Guid? ItemId)? PendingDispatch { get; set; }
     public bool CanGoBack => history.Count > 0;
     public bool AllowsCallback(string route) => allowedCallbacks.Contains(route);
     public bool AllowsPlainCallback(string route) => plainCallbacks.Contains(route);
@@ -31,6 +45,16 @@ public sealed class ConversationState
         featureData.TryGetValue(feature, out var value) ? value.Deserialize<T>() : default;
 
     public void ClearFeatureData(string feature) => featureData.Remove(feature);
+
+    /// <summary>Stores the selected offering and the values displayed for confirmation.</summary>
+    public void SetBooking(BookingSelection selection)
+    {
+        ArgumentNullException.ThrowIfNull(selection);
+        Booking = selection;
+    }
+
+    /// <summary>Clears the booking intent when the flow is cancelled or completed.</summary>
+    public void ClearBooking() => Booking = null;
 
     public TelegramMenuButton Button(string label, string route)
     {
@@ -80,7 +104,7 @@ public sealed class ConversationState
     {
         ValidateStep(step);
         if (history.Count == 32) history.RemoveAt(0);
-        history.Add(new Screen(Step, new(Selections), new(featureData), ConfirmationRequestId));
+        history.Add(new Screen(Step, new(Selections), new(featureData), Booking, ConfirmationRequestId));
         BeginStep(step, nowUtc);
     }
 
@@ -93,6 +117,7 @@ public sealed class ConversationState
         foreach (var pair in previous.Selections) Selections.Add(pair.Key, pair.Value);
         featureData.Clear();
         foreach (var pair in previous.FeatureData) featureData.Add(pair.Key, pair.Value);
+        Booking = previous.Booking;
         ConfirmationRequestId = previous.ConfirmationRequestId;
         BeginStep(previous.Step, nowUtc);
         return true;
@@ -129,6 +154,7 @@ public sealed class ConversationState
         Selections.Clear();
         history.Clear();
         featureData.Clear();
+        Booking = null;
         PendingNavigation = null;
         PendingDispatch = null;
         ConfirmationRequestId = null;
@@ -142,5 +168,6 @@ public sealed class ConversationState
     }
 
     private sealed record Screen(string Step, Dictionary<string, string> Selections,
-        Dictionary<string, JsonElement> FeatureData, Guid? ConfirmationRequestId);
+        Dictionary<string, JsonElement> FeatureData, BookingSelection? Booking,
+        Guid? ConfirmationRequestId);
 }

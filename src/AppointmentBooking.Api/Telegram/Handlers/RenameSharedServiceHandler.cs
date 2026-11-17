@@ -15,7 +15,11 @@ public sealed class RenameSharedServiceHandler(CatalogService catalog, IAccessSe
     public async Task HandleAsync(TelegramHandlerContext context, CancellationToken ct)
     {
         var state = context.State;
-        if (!context.IsRetry) state.ClearFeatureData(Delivery);
+        if (!context.IsRetry)
+        {
+            state.ClearFeatureData(Delivery);
+            state.ClearFeatureData(SharedServicesHandler.ResultKey);
+        }
         await access.RequireOwnerAsync(context.Caller.Actor, ct);
 
         var progress = state.GetFeatureData<RenameDelivery>(Delivery);
@@ -45,6 +49,7 @@ public sealed class RenameSharedServiceHandler(CatalogService catalog, IAccessSe
                 state.SetFeatureData(Delivery, new RenameDelivery(result.Name));
                 state.BeginStep("services", clock.UtcNow);
                 reply = $"Service renamed to {result.Name}.";
+                state.SetFeatureData(SharedServicesHandler.ResultKey, reply);
             }
             catch (AppException error) when (error.Code == ErrorCodes.ValidationFailed)
             {

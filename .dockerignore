@@ -14,3 +14,4 @@
 **/*.dump
 **/*.backup
 artifacts/
+AGENTS.md

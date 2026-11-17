@@ -58,4 +58,37 @@ public sealed class BookingEndpointsTests(PostgresFixture fixture)
         Assert.Equal(created.Id, stored.Id);
         Assert.Equal(seed.Client.Id, stored.ClientUserId);
     }
+
+    [Fact]
+    public async Task MineAndCancelUseAuthenticatedBookingIdentity()
+    {
+        await using var seed = await BookingTestSetup.CreateAsync(fixture);
+        await using var host = seed.Factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["ApiAccess:Keys:0:Key"] = "booking-test-key",
+                    ["ApiAccess:Keys:0:TelegramUserId"] = seed.Client.TelegramUserId.ToString()
+                }));
+            builder.ConfigureTestServices(BookingTestSetup.ConfigureClock);
+        });
+        using var client = host.CreateClient();
+        client.DefaultRequestHeaders.Add(ApiKeyAuthenticationHandler.HeaderName, "booking-test-key");
+
+        var created = await seed.CreateBookingAsync(seed.Request);
+        using var mine = await client.GetAsync("/api/bookings/mine");
+        mine.EnsureSuccessStatusCode();
+        var listed = await mine.Content.ReadFromJsonAsync<List<BookingDto>>();
+        Assert.Equal(created, Assert.Single(listed!));
+
+        using var cancelled = await client.PostAsync($"/api/bookings/{created.Id}/cancel", null);
+        cancelled.EnsureSuccessStatusCode();
+        var cancelledBooking = await cancelled.Content.ReadFromJsonAsync<BookingDto>();
+        Assert.Equal(BookingStatus.Cancelled, cancelledBooking!.Status);
+
+        using var afterCancel = await client.GetAsync("/api/bookings/mine");
+        var history = await afterCancel.Content.ReadFromJsonAsync<List<BookingDto>>();
+        Assert.Equal(BookingStatus.Cancelled, Assert.Single(history!).Status);
+    }
 }
