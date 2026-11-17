@@ -87,3 +87,23 @@ inserts and asserts PostgreSQL reports the exclusion and unique constraints.
 6. Show snapshots survive offering changes.
 7. Reject unauthorized schedule edit; repeat confirmation without duplicates.
 8. Switch transport and repeat the core flow; show Swagger and test results.
+
+
+### Scheduling and availability demonstration (Task 12)
+
+1. Configure an employee to work 09:00–18:00 in Asia/Yerevan, with a 12:00–13:00
+   break. On November 10, 2026, the 09:00 local start is 05:00 UTC. A 30-minute
+   appointment may end exactly at the start of the break or at closing.
+2. Read availability with the booking date in the business timezone. The default
+   window includes today and the local date 30 days ahead. A start at the current
+   instant is already unavailable.
+3. Add a day off and query availability again. Removing it restores the employee's
+   original slots, while another employee's day off remains in effect.
+4. Run the schedule-versus-booking tests with PostgreSQL. They verify both lock
+   orders for shortened hours, specific dates off and weekly days off. Only the
+   operation that acquires the lock first persists when the two changes conflict.
+5. For a two-hour service on Berlin's spring and autumn clock-change dates, using
+   hours 00:00–06:00 and a 15-minute step, the first valid local start is 03:00.
+   It is 01:00 UTC on March 29, 2026 and 02:00 UTC on October 25, 2026. The tests
+   compare the exact UTC slots with final single-slot validation, including both
+   occurrences of the repeated autumn hour.

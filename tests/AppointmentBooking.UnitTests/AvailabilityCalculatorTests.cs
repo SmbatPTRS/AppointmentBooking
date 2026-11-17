@@ -111,30 +111,28 @@ public sealed class AvailabilityCalculatorTests
     }
 
     [Theory]
-    [InlineData(2026, 3, 29)]
-    [InlineData(2026, 10, 25)]
-    public void SkipsInvalidAmbiguousAndCrossOffsetIntervals(int year, int month, int day)
+    [InlineData(2026, 3, 29, 1)]
+    [InlineData(2026, 10, 25, 2)]
+    public void SkipsInvalidAmbiguousAndCrossOffsetIntervals(int year, int month, int day, int firstUtcHour)
     {
         var date = new DateOnly(year, month, day);
         var zone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Berlin");
         var now = new DateTimeOffset(date.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero).AddDays(-1);
         var input = new AvailabilityInput(date, zone, 120,
             new(new(0, 0), new(6, 0)), [], []);
-        var slots = Calculator().Calculate(input, now);
-        Assert.NotEmpty(slots);
-        foreach (var slot in slots)
-        {
-            var start = TimeZoneInfo.ConvertTime(slot.StartsAtUtc, zone);
-            var end = TimeZoneInfo.ConvertTime(slot.EndsAtUtc, zone);
-            Assert.Equal(start.Offset, end.Offset);
-            Assert.False(zone.IsInvalidTime(start.DateTime));
-            Assert.False(zone.IsAmbiguousTime(start.DateTime));
-            Assert.False(zone.IsInvalidTime(end.DateTime));
-            Assert.False(zone.IsAmbiguousTime(end.DateTime));
-            Assert.Equal(TimeSpan.FromMinutes(120), slot.EndsAtUtc - slot.StartsAtUtc);
-        }
-        var crossing = new DateTimeOffset(date.ToDateTime(new TimeOnly(1, 30)), zone.GetUtcOffset(date.ToDateTime(new TimeOnly(1, 30))));
-        Assert.False(Calculator().IsAvailable(input, crossing, now));
+        var calculator = Calculator();
+        var firstUtc = new DateTimeOffset(year, month, day, firstUtcHour, 0, 0, TimeSpan.Zero);
+        var expected = Enumerable.Range(0, 5).Select(i => firstUtc.AddMinutes(15 * i)).ToArray();
+        var slots = calculator.Calculate(input, now);
+
+        // Only 03:00–04:00 local starts fit two hours without touching the transition.
+        Assert.Equal(expected, slots.Select(slot => slot.StartsAtUtc));
+        Assert.Equal(expected.Select(start => start.AddHours(2)), slots.Select(slot => slot.EndsAtUtc));
+
+        // Check the full grid plus both UTC occurrences of the repeated autumn hour.
+        var scanStart = new DateTimeOffset(date.AddDays(-1).ToDateTime(new TimeOnly(22, 0)), TimeSpan.Zero);
+        for (var start = scanStart; start <= firstUtc.AddHours(3); start = start.AddMinutes(15))
+            Assert.Equal(expected.Contains(start), calculator.IsAvailable(input, start, now));
     }
 
     [Fact]
