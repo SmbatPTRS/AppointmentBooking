@@ -9,8 +9,8 @@ Tasks 10–12 and end-to-end acceptance are not complete.
   See member-b-schedule-api.md and member-b-telegram-schedule.md.
 - Availability HTTP API is merged (PR #23); see member-b-availability-api.md.
 - Catalogue HTTP browsing and owner service creation are merged.
-  Owner Telegram creation/rename and HTTP rename remain in PR #26 (separate branch).
-- This branch adds protected read-only offering inspection via HTTP and /offerings,
+  Owner Telegram creation/rename and HTTP rename are merged (PR #26).
+- Protected read-only offering inspection via HTTP and /offerings is merged (PR #29),
   including inactive rows, scoped employee selection, pagination and retry recovery.
   See member-b-offering-overview.md. Offering mutations remain pending A/C agreement.
 
@@ -40,8 +40,14 @@ Tasks 10–12 and end-to-end acceptance are not complete.
 ## Verification and limits
 
 `dotnet test AppointmentBooking.sln -c Release --nologo`:
-170 unit tests and 300 integration cases passed on 2026-11-18
-on feature/erik-offering-overview, based on development bb2c01f.
+170 unit tests and 357 integration cases passed on 2026-11-18
+on feature/erik-schedule-channel-tests, based on development da1b665.
+
+This branch adds 41 cross-channel acceptance cases (7 hours/timezone, 12 days off,
+14 booking protection and 8 delivery recovery). They exercise real authorization,
+HTTP endpoints, Telegram handlers, PostgreSQL persistence and availability with
+fake Telegram delivery. Settings fixture changes are restored after each test.
+See member-b-schedule-channel-acceptance.md for the matrix, commands and limits.
 
 Schedule tests cover persistence, duplicate constraints, scoped repository lookup,
 input errors, denied hours/day-off additions, future booking conflicts and removal.

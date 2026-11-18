@@ -116,7 +116,8 @@ public sealed class ScheduleChannelScenario : IAsyncDisposable
 
     public Task Send(string text) => Deliver(Message(text));
     public Task Click(string label) => Callback(Sender.SentMenus.Last().Buttons.Single(b => b.Text == label).CallbackData);
-    public Task Callback(string data) => Deliver(new Update
+    public Task Callback(string data) => Deliver(CallbackUpdate(data));
+    public Update CallbackUpdate(string data) => new Update
     {
         Id = ++updateId,
         CallbackQuery = new CallbackQuery
@@ -126,7 +127,7 @@ public sealed class ScheduleChannelScenario : IAsyncDisposable
             From = new Telegram.Bot.Types.User { Id = Employee.TelegramUserId, FirstName = "Employee" },
             Message = new Message { Chat = new Chat { Id = Employee.TelegramUserId } }
         }
-    });
+    };
 
     public async Task Deliver(Update update)
     {
