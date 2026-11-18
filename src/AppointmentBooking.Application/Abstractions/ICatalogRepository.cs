@@ -7,6 +7,7 @@ public interface ICatalogRepository
 {
     Task<IReadOnlyList<ServiceDto>> ListActiveServicesAsync(CancellationToken ct);
     Task<IReadOnlyList<StaffServiceDto>> ListActiveOfferingsAsync(Guid staffMemberId, CancellationToken ct);
+    Task<IReadOnlyList<ManagedOfferingDto>> ListManagedOfferingsAsync(Guid staffMemberId, CancellationToken ct);
     Task<Service?> GetServiceAsync(Guid serviceId, CancellationToken ct);
     Task<StaffService?> GetOfferingAsync(Guid staffMemberId, Guid serviceId, CancellationToken ct);
     Task<StaffService?> GetOfferingByIdAsync(Guid offeringId, CancellationToken ct);

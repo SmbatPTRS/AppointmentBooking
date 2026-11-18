@@ -1,6 +1,6 @@
 # Member B handoff
 
-Updated 2026-11-12. Tasks 07–09 have application/repository groundwork;
+Updated 2026-11-18. Tasks 07–09 have application/repository groundwork;
 Tasks 10–12 and end-to-end acceptance are not complete.
 
 ## Implemented
@@ -8,8 +8,11 @@ Tasks 10–12 and end-to-end acceptance are not complete.
 - Schedule HTTP API and Telegram schedule management are merged (PRs #17/#24).
   See member-b-schedule-api.md and member-b-telegram-schedule.md.
 - Availability HTTP API is merged (PR #23); see member-b-availability-api.md.
-- Catalogue HTTP browsing and owner service creation are implemented in this branch;
-  see member-b-catalog-api.md. Catalogue editing/configuration remain pending.
+- Catalogue HTTP browsing and owner service creation are merged.
+  Owner Telegram creation/rename and HTTP rename remain in PR #26 (separate branch).
+- This branch adds protected read-only offering inspection via HTTP and /offerings,
+  including inactive rows, scoped employee selection, pagination and retry recovery.
+  See member-b-offering-overview.md. Offering mutations remain pending A/C agreement.
 
 - Catalog DTOs and CatalogRules enforce trimmed service names up to 200 characters,
   numeric(12,2) price bounds and at most two meaningful decimal places.
@@ -37,16 +40,19 @@ Tasks 10–12 and end-to-end acceptance are not complete.
 ## Verification and limits
 
 `dotnet test AppointmentBooking.sln -c Release --nologo`:
-156 unit tests and 139 integration cases passed on 2026-11-09
-after integrating development into feature/erik-schedule-access.
+170 unit tests and 300 integration cases passed on 2026-11-18
+on feature/erik-offering-overview, based on development bb2c01f.
 
 Schedule tests cover persistence, duplicate constraints, scoped repository lookup,
 input errors, denied hours/day-off additions, future booking conflicts and removal.
 Two concurrency cases hold the real PostgreSQL employee lock, observe the waiting
 schedule operation through pg_locks, commit a booking, then verify that the hours
 edit/day-off addition rejects the conflict and leaves stored schedule data intact.
-The booking writer in these tests uses repositories/entities directly: this is
-not joint acceptance of C's BookingService or coordination-version checks.
+Those ScheduleService tests use repositories/entities directly. The newer
+AvailabilityEndpointsTests also exercise C's real BookingService in both lock orders
+against hours/date-off/weekly-off changes. Catalogue snapshot, cross-offering
+calendar and reactivation scenarios are covered. Catalogue fixture mutations do
+not prove management mutation lock ordering or coordination-version updates.
 
 ScheduleService tests use an IAccessService double; they do not prove A's authorization rules.
 ScheduleService is registered and exposed through the five schedule HTTP routes;
@@ -66,8 +72,9 @@ authorization implementation is supplied.
   Coordinate shared-service/offering lock ordering with A/C before mutations.
 - Complete remaining catalogue management HTTP/Telegram operations for Tasks 10/11.
   Schedule adapters are implemented; customer catalogue browsing is also implemented.
-- Run Task 12 joint booking-versus-schedule acceptance with C's actual booking code,
-  including coordination-version changes; these remain A/C-owned implementations.
+- Task 12 booking-versus-schedule tests now exercise C's actual booking code.
+  Complete catalogue mutation coordination acceptance and live Telegram smoke tests;
+  coordination-version implementations remain A/C-owned.
 - Reviewers: A for Task 08; C additionally reviews transaction/lock boundaries.
 
 ## Shared ownership
