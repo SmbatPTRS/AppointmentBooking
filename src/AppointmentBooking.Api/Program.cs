@@ -36,6 +36,7 @@ builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddTelegramInfrastructure();
 // Member B: customer catalogue route and its application service.
 builder.Services.AddScoped<AppointmentBooking.Application.Catalog.CatalogService>();
+builder.Services.AddScoped<AppointmentBooking.Application.Catalog.OfferingManagementService>();
 builder.Services.AddScoped<ITelegramHandler, AppointmentBooking.Api.Telegram.Handlers.CatalogHandler>();
 builder.Services.AddOptions<OwnerOptions>()
     .BindConfiguration(OwnerOptions.SectionName)
@@ -53,6 +54,10 @@ builder.Services.AddScoped<AvailabilityService>();
 // Member B: schedule operations share the existing scoped repositories and lock.
 builder.Services.AddScoped<AppointmentBooking.Application.Scheduling.ScheduleChangeValidator>();
 builder.Services.AddScoped<AppointmentBooking.Application.Scheduling.ScheduleService>();
+foreach (var route in AppointmentBooking.Api.Telegram.Handlers.OfferingOverviewHandler.Routes)
+    builder.Services.AddScoped<AppointmentBooking.Api.Telegram.ITelegramHandler>(provider =>
+        ActivatorUtilities.CreateInstance<AppointmentBooking.Api.Telegram.Handlers.OfferingOverviewHandler>(provider, route));
+
 foreach (var route in AppointmentBooking.Api.Telegram.Handlers.ScheduleHandler.Routes)
     builder.Services.AddScoped<ITelegramHandler>(provider =>
         ActivatorUtilities.CreateInstance<AppointmentBooking.Api.Telegram.Handlers.ScheduleHandler>(provider, route));
