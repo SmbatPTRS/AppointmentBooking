@@ -91,3 +91,26 @@ Use real PostgreSQL for database constraints, transactions and concurrency tests
    It is 01:00 UTC on March 29, 2026 and 02:00 UTC on October 25, 2026. The tests
    compare the exact UTC slots with final single-slot validation, including both
    occurrences of the repeated autumn hour.
+
+### Catalogue/schedule integration coverage (Task 12)
+
+`AvailabilityEndpointsTests` exercises the following against PostgreSQL and the
+authenticated HTTP adapters, using the real booking service:
+
+- Changing an offering from 30 minutes to 15 or 60 refreshes slots. New bookings
+  require current terms; an existing booking retains its original price/duration.
+- An inactive employee, service or offering has no available slots or visible
+  employee offering. Reactivation restores only unoccupied slots; cancellation
+  then restores the full original availability.
+- Two employees offering the same service retain different prices/durations and
+  independent calendars. Different offerings of one employee share occupied time.
+- A break or later opening that overlaps a confirmed appointment is rejected
+  without changing persisted hours or available slots. It succeeds after cancellation.
+- When a specific date and weekly day off overlap, deleting either one does not
+  reopen that date until the other is removed. The next week respects only the
+  recurring rule. Both deletion orders are covered.
+
+Offering term/status changes in these tests are fixture setup through existing
+entities. They do not prove catalogue mutation authorization, lock ordering or
+coordination-version updates. Those require separate management-flow acceptance.
+These automated checks also do not replace a live Telegram demonstration.
