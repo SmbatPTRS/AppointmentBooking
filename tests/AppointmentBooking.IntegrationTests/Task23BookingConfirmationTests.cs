@@ -14,9 +14,15 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace AppointmentBooking.IntegrationTests;
 
-[Collection(PostgresCollection.Name)]
-public sealed class Task23BookingConfirmationTests(PostgresFixture fixture)
+public sealed class Task23BookingConfirmationTests : IAsyncLifetime
 {
+    // The real /book screen lists every active employee. Give each scenario its own
+    // database so catalogue rows left by unrelated tests cannot affect its buttons.
+    private readonly PostgresFixture fixture = new();
+
+    public Task InitializeAsync() => fixture.InitializeAsync();
+    public Task DisposeAsync() => fixture.DisposeAsync();
+
     [Fact]
     public async Task ClickingTheRealConfirmationButtonTwiceKeepsOneSavedBooking()
     {

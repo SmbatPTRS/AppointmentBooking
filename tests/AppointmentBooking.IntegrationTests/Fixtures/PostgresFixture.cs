@@ -36,6 +36,13 @@ public sealed class PostgresFixture : IAsyncLifetime
 
         return new AppDbContext(options);
     }
+
+    public void AssertRealPostgres(AppDbContext db)
+    {
+        Assert.Equal("Npgsql.EntityFrameworkCore.PostgreSQL", db.Database.ProviderName);
+        Assert.Contains("appointmentbooking_tests", db.Database.GetConnectionString(),
+            StringComparison.Ordinal);
+    }
 }
 
 [CollectionDefinition(Name)]
