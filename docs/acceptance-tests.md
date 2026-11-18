@@ -65,6 +65,21 @@ day-off mutation proceeds; the mutation observes the committed booking and
 leaves no day-off row. `SchemaConstraintsTests` also attempts direct SQL
 inserts and asserts PostgreSQL reports the exclusion and unique constraints.
 
+The booking test host is initialized once during setup, before concurrent
+requests are released. Each booking operation creates and disposes its own
+service scope and `AppDbContext`; the initialized host is disposed only after
+all operations finish.
+
+The unique-conflict recovery test deterministically inserts a competing booking
+through a separate PostgreSQL context immediately before the attempted save.
+The competing booking is cancelled, preserving its RequestId while avoiding an
+unrelated overlap violation. The test asserts the real `23505` error and
+`ux_bookings_client_request` constraint, rollback/disposal of the failed
+transaction, and recovery through a different context. Matching payloads return
+the persisted winner; changed payloads return `RequestIdConflict`. This is a
+controlled database-conflict test; the separate concurrent-request test retains
+the real employee lock.
+
 ## Telegram and deployment
 
 - /start and a full booking/cancellation flow work in polling and webhook modes.
