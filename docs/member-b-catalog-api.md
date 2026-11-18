@@ -9,6 +9,7 @@ body fields and arbitrary identity headers cannot grant owner privileges.
 | GET /api/services | 200, active shared service types | Authenticated user |
 | GET /api/staff/{staffId}/services | 200, active employee offerings | Authenticated user |
 | POST /api/services | 201, new active service type | Owner |
+| PATCH /api/services/{serviceId} | 200, renamed service type | Owner |
 
 ## Create a service
 
@@ -23,6 +24,14 @@ names return 400 without adding a row. Missing/invalid API keys return 401. Vali
 non-owner identities receive 403 when submitting a valid creation request. HTTP
 binding errors use the standard validation response; application errors retain the
 existing middleware's code and message format.
+
+## Rename a service
+
+Send `{"name":"New name"}` to `PATCH /api/services/{serviceId}`. The same trimmed name
+rules apply. An owner can rename either an active or inactive service. The response
+returns the updated service with its existing activation status. Missing services
+return 404. The request accepts only `name`, so sending `isActive` returns 400.
+Existing offerings keep their service reference, price and duration.
 
 ## Browsing
 
@@ -39,10 +48,11 @@ or a substitute for C's final booking checks under the employee lock.
 ## Verification and remaining work
 
 CatalogEndpointsTests runs the real host, API-key authentication, AccessService,
-CatalogService and PostgreSQL repositories. It covers all three route permissions,
+CatalogService and PostgreSQL repositories. It covers route permissions,
 owner impersonation attempts, creation/persistence, validation boundaries, active
-filters, employee isolation, current database state and Location reachability.
+filters, employee isolation, database state and Location reachability. Rename tests
+also check that offering terms and activation status remain intact.
 
-This block does not implement service editing/deactivation or staff-offering
-configuration. Those remain B work after the shared lock/version rules are settled.
+Service activation/deactivation and staff-offering configuration depend on the
+shared lock/version rules.
 No entity, migration, booking, authorization or Telegram infrastructure code changes.

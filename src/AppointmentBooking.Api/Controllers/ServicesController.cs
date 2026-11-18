@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 using AppointmentBooking.Api.Authentication;
 using AppointmentBooking.Application.Catalog;
 using AppointmentBooking.Application.Common;
@@ -32,6 +33,20 @@ public sealed class ServicesController(CatalogService catalog, HttpActorResolver
         return CreatedAtAction(nameof(List), service);
     }
 
+    /// <summary>Renames an existing service without changing its activation status.</summary>
+    [HttpPatch("{serviceId:guid}")]
+    [ProducesResponseType(typeof(ServiceDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ServiceDto>> Rename(Guid serviceId, [FromBody] RenameServiceBody request,
+        CancellationToken ct)
+    {
+        var actor = await actors.ResolveAsync(HttpContext);
+        var service = await catalog.RenameServiceAsync(actor, serviceId, new(request.Name), ct);
+        return Ok(service);
+    }
+
     /// <summary>Active employee offerings, or an empty array for an unknown/inactive employee.</summary>
     [HttpGet("/api/staff/{staffId:guid}/services")]
     [ProducesResponseType(typeof(IReadOnlyList<StaffServiceDto>), StatusCodes.Status200OK)]
@@ -45,6 +60,13 @@ public sealed class ServicesController(CatalogService catalog, HttpActorResolver
 
     // HTTP model binding validates properties; application DTOs retain their own validation.
     public sealed class CreateServiceBody
+    {
+        [Required]
+        public string Name { get; init; } = string.Empty;
+    }
+
+    [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+    public sealed class RenameServiceBody
     {
         [Required]
         public string Name { get; init; } = string.Empty;

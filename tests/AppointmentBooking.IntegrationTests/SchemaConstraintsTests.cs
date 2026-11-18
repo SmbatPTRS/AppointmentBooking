@@ -5,6 +5,7 @@ using AppointmentBooking.Domain.Enums;
 using AppointmentBooking.Infrastructure.Persistence;
 using AppointmentBooking.IntegrationTests.Fixtures;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace AppointmentBooking.IntegrationTests;
 
@@ -64,6 +65,60 @@ public sealed class SchemaConstraintsTests(PostgresFixture fixture)
         var conflict = await Assert.ThrowsAsync<DbConflictException>(
             () => ((IUnitOfWork)db).SaveChangesAsync(CancellationToken.None));
         Assert.Equal(ConflictKind.UniqueRequestId, conflict.Kind);
+    }
+
+    [Fact]
+    public async Task DirectSqlCannotBypassTheConfirmedOverlapConstraint()
+    {
+        await using var db = fixture.CreateContext();
+        fixture.AssertRealPostgres(db);
+        var seed = AddBookingDependencies(db);
+        await db.SaveChangesAsync();
+        var start = DateTime.UtcNow.AddHours(2);
+        db.Bookings.Add(CreateBooking(seed, seed.ClientId, start));
+        await db.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<PostgresException>(() =>
+            db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO bookings
+                    (id, client_user_id, staff_member_id, staff_service_id, request_id,
+                     starts_at_utc, ends_at_utc, price, duration_minutes, status, created_at_utc)
+                VALUES
+                    ({Guid.NewGuid()}, {seed.ClientId}, {seed.StaffId}, {seed.StaffServiceId},
+                     {Guid.NewGuid()}, {start.AddMinutes(15)}, {start.AddMinutes(45)},
+                     {25m}, {30}, {"Confirmed"}, {DateTime.UtcNow})
+                """));
+
+        Assert.Equal("ex_bookings_staff_confirmed_overlap", exception.ConstraintName);
+        await using var verification = fixture.CreateContext();
+        Assert.Equal(1, await verification.Bookings.CountAsync(b => b.StaffMemberId == seed.StaffId));
+    }
+
+    [Fact]
+    public async Task DirectSqlCannotBypassTheRequestIdUniquenessConstraint()
+    {
+        await using var db = fixture.CreateContext();
+        var seed = AddBookingDependencies(db);
+        await db.SaveChangesAsync();
+        var start = DateTime.UtcNow.AddHours(2);
+        var requestId = Guid.NewGuid();
+        db.Bookings.Add(CreateBooking(seed, seed.ClientId, start, requestId));
+        await db.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<PostgresException>(() =>
+            db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO bookings
+                    (id, client_user_id, staff_member_id, staff_service_id, request_id,
+                     starts_at_utc, ends_at_utc, price, duration_minutes, status, created_at_utc)
+                VALUES
+                    ({Guid.NewGuid()}, {seed.ClientId}, {seed.StaffId}, {seed.StaffServiceId},
+                     {requestId}, {start.AddHours(2)}, {start.AddHours(2).AddMinutes(30)},
+                     {25m}, {30}, {"Confirmed"}, {DateTime.UtcNow})
+                """));
+
+        Assert.Equal("ux_bookings_client_request", exception.ConstraintName);
+        await using var verification = fixture.CreateContext();
+        Assert.Single(await verification.Bookings.Where(b => b.RequestId == requestId).ToListAsync());
     }
 
     private static Booking CreateBooking(

@@ -1,4 +1,6 @@
 using AppointmentBooking.Application.Abstractions;
+using AppointmentBooking.Application.Bookings;
+using AppointmentBooking.Application.Common;
 using AppointmentBooking.Domain.Entities;
 using AppointmentBooking.Domain.Enums;
 using AppointmentBooking.Infrastructure.Persistence;
@@ -160,6 +162,120 @@ public sealed class BookingConcurrencyTests(PostgresFixture fixture)
         Assert.Equal(results[0], results[1]);
         Assert.Equal(BookingStatus.Completed, results[0]!.Status);
     }
+
+    [Fact]
+    public async Task OverlappingRequestsForOneEmployeeCommitExactlyOneBooking()
+    {
+        await using var seed = await BookingTestSetup.CreateAsync(fixture);
+        var first = seed.Request with { RequestId = Guid.NewGuid() };
+        var second = seed.Request with { RequestId = Guid.NewGuid() };
+        var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var requests = new[]
+        {
+            RunAfter(start, () => seed.CreateBookingAsync(first)),
+            RunAfter(start, () => seed.CreateBookingAsync(second))
+        };
+        start.SetResult();
+
+        var results = await Task.WhenAll(requests);
+
+        Assert.Equal(1, results.Count(result => result.Error is null));
+        Assert.Equal(1, results.Count(result => result.Error?.Code == ErrorCodes.TimeUnavailable));
+        await using var db = fixture.CreateContext();
+        fixture.AssertRealPostgres(db);
+        Assert.Equal(1, await db.Bookings.CountAsync(b => b.ClientUserId == seed.Client.Id));
+    }
+
+    [Fact]
+    public async Task DifferentEmployeesAtTheSameTimeBothCommit()
+    {
+        await using var seed = await BookingTestSetup.CreateAsync(fixture);
+        await using var db = fixture.CreateContext();
+        var employee = new User(Interlocked.Increment(ref nextTelegramUserId), "Second employee", null, DateTime.UtcNow);
+        var staff = new StaffMember(employee.Id, "Second staff");
+        var service = await db.Services.SingleAsync(s => s.Id == (db.StaffServices
+            .Where(o => o.Id == seed.Request.StaffServiceId).Select(o => o.ServiceId).Single()));
+        var offering = new StaffService(staff.Id, service.Id, 25m, 30);
+        db.AddRange(employee, staff, offering, new BookingCoordination(staff),
+            new WorkingHours(staff.Id, new TimeOnly(9, 0), new TimeOnly(17, 0)));
+        await db.SaveChangesAsync();
+
+        var secondRequest = seed.Request with
+        {
+            RequestId = Guid.NewGuid(),
+            StaffServiceId = offering.Id
+        };
+        var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var results = new[]
+        {
+            RunAfter(start, () => seed.CreateBookingAsync(seed.Request with { RequestId = Guid.NewGuid() })),
+            RunAfter(start, () => seed.CreateBookingAsync(secondRequest))
+        };
+        start.SetResult();
+
+        var completed = await Task.WhenAll(results);
+
+        Assert.All(completed, result => Assert.Null(result.Error));
+        Assert.Equal(2, await db.Bookings.CountAsync(b => b.ClientUserId == seed.Client.Id));
+    }
+
+    [Fact]
+    public async Task AdjacentAppointmentsForOneEmployeeBothCommit()
+    {
+        await using var seed = await BookingTestSetup.CreateAsync(fixture);
+        var second = seed.Request with
+        {
+            RequestId = Guid.NewGuid(),
+            StartAtUtc = seed.Request.StartAtUtc.AddMinutes(30)
+        };
+
+        var first = await seed.CreateBookingAsync(seed.Request with { RequestId = Guid.NewGuid() });
+        var next = await seed.CreateBookingAsync(second);
+
+        Assert.NotEqual(first.Id, next.Id);
+        await using var db = fixture.CreateContext();
+        Assert.Equal(2, await db.Bookings.CountAsync(b => b.ClientUserId == seed.Client.Id));
+    }
+
+    [Fact]
+    public async Task CancellationReleasesTheSlotForACommittedRetry()
+    {
+        await using var seed = await BookingTestSetup.CreateAsync(fixture);
+        var created = await seed.CreateBookingAsync(seed.Request);
+
+        await using (var db = fixture.CreateContext())
+        {
+            var booking = await db.Bookings.SingleAsync(b => b.Id == created.Id);
+            booking.Cancel(new DateTime(2026, 11, 9, 8, 30, 0, DateTimeKind.Utc));
+            await db.SaveChangesAsync();
+        }
+
+        var replacement = await seed.CreateBookingAsync(seed.Request with { RequestId = Guid.NewGuid() });
+
+        Assert.NotEqual(created.Id, replacement.Id);
+        await using var verification = fixture.CreateContext();
+        Assert.Equal(2, await verification.Bookings.CountAsync(b => b.ClientUserId == seed.Client.Id));
+        Assert.Equal(BookingStatus.Cancelled,
+            (await verification.Bookings.SingleAsync(b => b.Id == created.Id)).Status);
+    }
+
+    private static async Task<Attempt> RunAfter(
+        TaskCompletionSource start,
+        Func<Task<BookingDto>> operation)
+    {
+        await start.Task;
+        try
+        {
+            return new Attempt(await operation(), null);
+        }
+        catch (AppException exception)
+        {
+            return new Attempt(null, exception);
+        }
+    }
+
+    private sealed record Attempt(BookingDto? Booking, AppException? Error);
 
     private static async Task AssertBlockedAsync(Task acquireTask)
     {
