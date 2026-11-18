@@ -49,6 +49,37 @@ Use real PostgreSQL for database constraints, transactions and concurrency tests
 - Adding a day off concurrently with booking creation cannot commit an inconsistent pair.
 - Direct conflicting SQL inserts are rejected by the exclusion constraint.
 
+### PostgreSQL concurrency evidence
+
+The integration suite uses the Testcontainers PostgreSQL fixture only; each
+operation gets its own `AppDbContext` and connection. `BookingConcurrencyTests`
+coordinates independent requests with a start gate and verifies committed rows
+for same-staff overlap, different staff, adjacent appointments, cancellation
+slot release, and concurrent lifecycle updates. `BookingIdempotencyTests`
+verifies concurrent identical requests return one persisted ID, fresh-context
+recovery after the unique-key race, altered payload rejection (including a
+different employee), offering snapshot stability, and retries after
+cancellation. `ScheduleConcurrencyTests` holds the PostgreSQL advisory lock
+while the opposing operation starts, then commits the booking before the
+day-off mutation proceeds; the mutation observes the committed booking and
+leaves no day-off row. `SchemaConstraintsTests` also attempts direct SQL
+inserts and asserts PostgreSQL reports the exclusion and unique constraints.
+
+The booking test host is initialized once during setup, before concurrent
+requests are released. Each booking operation creates and disposes its own
+service scope and `AppDbContext`; the initialized host is disposed only after
+all operations finish.
+
+The unique-conflict recovery test deterministically inserts a competing booking
+through a separate PostgreSQL context immediately before the attempted save.
+The competing booking is cancelled, preserving its RequestId while avoiding an
+unrelated overlap violation. The test asserts the real `23505` error and
+`ux_bookings_client_request` constraint, rollback/disposal of the failed
+transaction, and recovery through a different context. Matching payloads return
+the persisted winner; changed payloads return `RequestIdConflict`. This is a
+controlled database-conflict test; the separate concurrent-request test retains
+the real employee lock.
+
 ## Telegram and deployment
 
 - /start and a full booking/cancellation flow work in polling and webhook modes.
