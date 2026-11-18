@@ -15,6 +15,7 @@ public sealed class WorkingHoursConfiguration
                 "ck_working_hours_interval",
                 "opens_at < closes_at");
 
+            // Keep model SQL identical for LF and CRLF source checkouts.
             table.HasCheckConstraint(
                 "ck_working_hours_break",
                 """
@@ -30,7 +31,7 @@ public sealed class WorkingHoursConfiguration
                     AND break_starts_at >= opens_at
                     AND break_ends_at <= closes_at
                 )
-                """);
+                """.ReplaceLineEndings("\n"));
         });
 
         builder.HasKey(hours => hours.Id);

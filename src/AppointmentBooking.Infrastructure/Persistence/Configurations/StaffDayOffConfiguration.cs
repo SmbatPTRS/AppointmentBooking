@@ -11,6 +11,7 @@ public sealed class StaffDayOffConfiguration
     {
         builder.ToTable("staff_days_off", table =>
         {
+            // Keep model SQL identical for LF and CRLF source checkouts.
             table.HasCheckConstraint(
                 "ck_staff_days_off_one_kind",
                 """
@@ -23,7 +24,7 @@ public sealed class StaffDayOffConfiguration
                     weekday IS NULL
                     AND date IS NOT NULL
                 )
-                """);
+                """.ReplaceLineEndings("\n"));
 
             table.HasCheckConstraint(
                 "ck_staff_days_off_weekday",
