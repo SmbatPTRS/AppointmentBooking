@@ -8,8 +8,9 @@ an HTTP API. Owner and employee operations use shared application permission che
 
 Implemented: shared entities/mappings, API-key identity, staff/business management
 through HTTP and Telegram, scheduling, availability, booking lifecycle and polling.
-Catalogue browsing and shared-service creation are available; B still owns remaining
-service/offering management. Webhook is deferred. CI currently runs unit tests only.
+Catalogue browsing, owner service creation/rename, and protected offering inspection
+are available through HTTP and Telegram. Service activation and offering mutations
+remain B work. Webhook is deferred. CI currently runs unit tests only.
 
 ## Quick start
 

@@ -9,8 +9,9 @@ Docker is required by the current integration-test fixture. On Smb's machine,
 for `dotnet` below if the default PATH selects another installation.
 
 Identity, staff/settings management, schedule management, availability, booking
-lifecycle and Telegram polling are implemented. Catalogue browsing and shared-service
-creation are implemented; remaining service/offering management belongs to B.
+lifecycle and Telegram polling are implemented. Catalogue browsing, owner service
+creation/rename, and protected offering inspection are available through HTTP and
+Telegram. Service activation and offering mutations remain B work.
 Webhook is deferred and is not a release requirement. Select Polling when enabling
 Telegram; selecting Webhook currently provides no update receiver.
 

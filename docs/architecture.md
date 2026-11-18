@@ -54,8 +54,10 @@ Telegram infrastructure; A/B/C provide their own feature screens.
 
 Nine persisted entities include the original eight business entities and the later
 BookingCoordination entity. Authentication, staff/settings, scheduling, availability,
-booking lifecycle and Telegram polling/management are integrated. Catalogue management
-is partially implemented; consult the release checklist for remaining work.
+booking lifecycle and Telegram polling/management are integrated. Catalogue browsing,
+owner service creation/rename, and protected read-only offering inspection are
+implemented. Service activation and offering mutations remain pending; consult the
+release checklist for current acceptance evidence and remaining work.
 See [shared contracts](shared-contracts.md) for the Task 01
 handoff, exact source interfaces, integration boundaries and review status.
 AppDbContextFactory is optional; EF tooling can obtain the context from the API
