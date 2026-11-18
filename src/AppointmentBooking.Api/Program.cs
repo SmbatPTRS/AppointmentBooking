@@ -38,6 +38,9 @@ builder.Services.AddTelegramInfrastructure();
 builder.Services.AddScoped<AppointmentBooking.Application.Catalog.CatalogService>();
 builder.Services.AddScoped<AppointmentBooking.Application.Catalog.OfferingManagementService>();
 builder.Services.AddScoped<ITelegramHandler, AppointmentBooking.Api.Telegram.Handlers.CatalogHandler>();
+builder.Services.AddScoped<ITelegramHandler, SharedServicesHandler>();
+builder.Services.AddScoped<ITelegramHandler, CreateSharedServiceHandler>();
+builder.Services.AddScoped<ITelegramHandler, RenameSharedServiceHandler>();
 builder.Services.AddOptions<OwnerOptions>()
     .BindConfiguration(OwnerOptions.SectionName)
     .Validate(options => options.TelegramUserId >= 0, "Owner:TelegramUserId must be zero or a positive Telegram user ID.")

@@ -8,6 +8,11 @@ namespace AppointmentBooking.Infrastructure.Repositories;
 
 public sealed class CatalogRepository(AppDbContext db) : ICatalogRepository
 {
+    public async Task<IReadOnlyList<ServiceDto>> ListServicesAsync(CancellationToken ct) =>
+        await db.Services.OrderBy(service => service.Name).ThenBy(service => service.Id)
+            .Select(service => new ServiceDto(service.Id, service.Name, service.IsActive))
+            .ToListAsync(ct);
+
     public async Task<IReadOnlyList<ServiceDto>> ListActiveServicesAsync(CancellationToken ct) =>
         await db.Services.Where(s => s.IsActive)
             .OrderBy(s => s.Name).ThenBy(s => s.Id)

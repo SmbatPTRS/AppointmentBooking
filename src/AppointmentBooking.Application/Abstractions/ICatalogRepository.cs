@@ -5,6 +5,7 @@ namespace AppointmentBooking.Application.Abstractions;
 
 public interface ICatalogRepository
 {
+    Task<IReadOnlyList<ServiceDto>> ListServicesAsync(CancellationToken ct);
     Task<IReadOnlyList<ServiceDto>> ListActiveServicesAsync(CancellationToken ct);
     Task<IReadOnlyList<StaffServiceDto>> ListActiveOfferingsAsync(Guid staffMemberId, CancellationToken ct);
     Task<IReadOnlyList<ManagedOfferingDto>> ListManagedOfferingsAsync(Guid staffMemberId, CancellationToken ct);
