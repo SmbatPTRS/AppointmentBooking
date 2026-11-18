@@ -1,7 +1,8 @@
 # Task 06 release acceptance checklist
 
-Snapshot: 2026-11-15, `feat/task06-schema-and-release-verification` from development
-`d00bc5b`, including the Task 06 changes. A owns consolidation;
+Updated: 2026-11-18, `feat/task06-schema-and-release-verification`, including fresh
+development `d41b0e7` through merge `c2facb5`. The original Task 06 work started from
+`d00bc5b` on 2026-11-15. A owns consolidation;
 feature owners retain their implementation, review and defect-fix responsibilities.
 
 **Release is pending.** Automated checks below do not substitute for teammate
@@ -20,30 +21,40 @@ explicitly deferred by Smb and is not a release gate.
 | Trusted identity/permissions | Passed: 73 focused integration + 8 unit authorization cases; [detailed matrix](task06-permission-acceptance.md) | A; C review |
 | Regional settings versus first booking | Passed: 14 focused integration cases; both race orders, invalid submissions, labels, history statuses and deactivation; [detailed evidence](task06-settings-booking-acceptance.md) | A/C |
 | Schedule/catalogue/availability implementation currently merged | Covered by full-suite service/repository/HTTP/Telegram tests, including schedule conflicts, access checks, active filters, availability boundaries and timezone logic; this does not complete unimplemented catalogue mutations | B |
-| Booking lifecycle and idempotency currently covered | Full-suite BookingLifecycleTests, BookingIdempotencyTests and BookingEndpointsTests cover access, transitions, snapshots, changed terms and identity-scoped retries | C |
+| Booking lifecycle and creation concurrency | Passed: BookingLifecycleTests, BookingConcurrencyTests, BookingIdempotencyTests and BookingEndpointsTests cover permissions, transitions, snapshots, overlapping creates, simultaneous identical requests, different employees, adjacent intervals, retry after cancellation and deterministic real unique-conflict recovery through a fresh scope. Cross-employee RequestId reuse is also tested sequentially | C |
+| Joint booking/schedule races | Passed: AvailabilityEndpointsTests exercises actual BookingService/ScheduleService in both lock orders for shortened hours, dated days off and weekly days off | B/C |
+| Shared-service management and offering inspection | Passed in the combined full suite: HTTP/Telegram service creation/rename and protected read-only offering inspection, including shared-service failed-reply recovery with the current dispatcher | B |
 | Polling/navigation infrastructure | Full-suite transport/navigation tests use fake Telegram HTTP/delivery; cover retry, offset ordering, restart, cancellation, stale/copied callbacks and send failures | D; feature owners for their handlers |
 
-Final Release result: **170 unit + 309 integration = 479 passed**, zero failures
-and zero skips. Builds succeeded. The clean-source Release build also reported zero
-warnings/errors. EF migration script generation succeeded using test-only configuration
-without a database connection.
+Latest combined Release result (2026-11-18): **170 unit + 376 integration = 546
+passed**, zero failures/skips. The actual Desktop merge result was tested with
+`--logger 'trx;LogFileName=task06-development-sync.trx'`; builds succeeded. It includes
+the original Task 06 work and merged PRs #26, #27, #28 and #29.
 
-A separate clean export of the current source (without .git, .env, bin or obj) restored
+Historical original Task 06 result (2026-11-15): **170 unit + 309 integration = 479
+passed**, zero failures/skips. The original clean-source Release build reported zero
+warnings/errors, and EF migration script generation succeeded with test-only
+configuration without a database connection.
+
+On 2026-11-15, a separate clean export of the original Task 06 source (without .git,
+.env, bin or obj) restored
 tools/dependencies and built from scratch. Against a new disposable PostgreSQL 16
 container, the documented EF database update and explicit seed command (twice)
 succeeded. The running Development host returned HTTP 200 for /health, /health/db
 and /swagger/index.html with polling disabled. Local rehearsal log:
 `/tmp/task06-clean-1b1zn2y0/rehearsal.log` (temporary, not a committed artifact).
-Focused counts overlap; do not add them together to estimate the full suite.
+That clean-source rehearsal has not been repeated for the newer teammate features.
+The detailed permission/settings documents record their dated original focused runs;
+their tests also passed in the latest combined full run. Focused counts overlap, so
+do not add them together to estimate the full suite.
 
 ## Remaining gates and responsible owners
 
 | Gate | Status / next action | Owner |
 | --- | --- | --- |
-| Shared-service editing/activation and employee offering creation/editing/activation through HTTP and Telegram | Pending implementation in current development; include price/duration validation, access checks and tests | B |
+| Service activation/deactivation and offering creation/editing/activation through HTTP and Telegram | Pending; shared-service creation/rename and offering inspection are implemented. Add remaining mutation validation, permissions and acceptance | B |
 | Catalogue mutation lock/version integration | Pending agreed lock order and joint acceptance against actual booking creation | B/C; A for requested model changes |
-| Actual create-booking races | Evidence pending for simultaneous overlapping creates and simultaneous duplicate requests, including same client/request across different employees. Current lock/constraint tests alone do not prove the whole BookingService recovery path | C |
-| Joint booking/schedule races | Evidence pending with the actual booking service, beyond direct repository/entity writers in existing schedule race tests | B/C |
+| Simultaneous same-client/RequestId submissions across different employees | Still pending: the new suite covers simultaneous identical requests and sequential cross-employee key reuse, plus deterministic unique-conflict recovery; it does not explicitly exercise simultaneous cross-employee submissions under the same key | C |
 | Real booking Telegram confirmation/send-retry acceptance | Evidence pending for the full feature through the real dispatcher; infrastructure/sample-state retry tests alone do not establish committed-booking behavior | C/D |
 | Integration CI | Pending: current workflow only runs unit tests. Add PostgreSQL integration job and record successful CI | D |
 | Installed PostgreSQL setup rehearsal | Pending documented fresh setup against installed PostgreSQL | A/D |
@@ -58,7 +69,7 @@ These are missing evidence/implementation in the inspected integration snapshot;
 work on other branches may supersede them once reviewed and merged. A passing suite
 is not evidence that unimplemented scenarios are complete.
 
-## Demonstration checklist (not yet executed)
+## Demonstration checklist (live feature demonstration pending)
 
 - [x] Rehearse documented build/migrations/seed twice from a clean source export against disposable PostgreSQL (A, 2026-11-15).
 - [ ] Team independently reproduces setup on its target environment.
@@ -79,7 +90,7 @@ is not evidence that unimplemented scenarios are complete.
 With dependencies restored and Docker running, from the repository root:
 
 ```bash
-/usr/lib/dotnet/dotnet test AppointmentBooking.sln --no-restore --configuration Release --logger 'trx;LogFileName=task06-final.trx'
+/usr/lib/dotnet/dotnet test AppointmentBooking.sln --no-restore --configuration Release --logger 'trx;LogFileName=task06-development-sync.trx'
 ```
 
 On other machines use the .NET 8 executable appropriate to the environment.
