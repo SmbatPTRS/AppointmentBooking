@@ -4,33 +4,24 @@ A university team project for one business: employees offer services with indivi
 prices/durations; clients find available times, book and cancel through Telegram or
 an HTTP API. Owner and employee operations use shared application permission checks.
 
-## Current foundation
+## Current status
 
-The shared foundation provides eight domain entities and EF mappings, shared
-identity/error/clock contracts, repository wiring, migrations, a test host,
-a scoped AppDbContext/IUnitOfWork, Swagger, health endpoints and CI for unit tests. Catalogue,
-scheduling, authentication, booking rules and Telegram handlers are implemented in
-the feature tasks. This README does not claim those features already work.
+Implemented: shared entities/mappings, API-key identity, staff/business management
+through HTTP and Telegram, scheduling, availability, booking lifecycle and polling.
+Catalogue browsing, owner service creation/rename, and protected offering inspection
+are available through HTTP and Telegram. Service activation and offering mutations
+remain B work. Webhook is deferred. CI currently runs unit tests only.
 
-## Quick start (Bash)
+## Quick start
 
-Install .NET 8 SDK and Docker Compose v2, then from the repository root:
+Follow [setup and deployment](docs/setup-and-deployment.md) to configure PostgreSQL,
+restore/build, apply committed migrations, run the explicit business-settings seed,
+and start the API/bot. Normal startup does not create the schema or seed settings.
+.NET 8 is required; integration tests use disposable Docker PostgreSQL containers.
 
-```bash
-cp src/AppointmentBooking.Api/.env.example src/AppointmentBooking.Api/.env
-# Edit .env: replace the password in POSTGRES_PASSWORD and the connection string.
-docker compose --env-file src/AppointmentBooking.Api/.env up -d --wait postgres
-dotnet tool restore
-dotnet restore AppointmentBooking.sln
-dotnet build AppointmentBooking.sln
-dotnet test tests/AppointmentBooking.UnitTests/AppointmentBooking.UnitTests.csproj
-cd src/AppointmentBooking.Api
-dotnet run --launch-profile http
-```
-
-Open http://localhost:5080/swagger. Health: /health and /health/db.
-For installed PostgreSQL, migrations, seed data, full Docker startup and later
-Telegram deployment, follow [setup-and-deployment](docs/setup-and-deployment.md).
+For the verified Task 06 results and remaining release dependencies, use the
+[release checklist](docs/task06-release-checklist.md). A passing local suite does not
+establish live Telegram, deployment or teammate approval.
 
 ## Structure and ownership
 
@@ -57,3 +48,6 @@ AppDbContext implements IUnitOfWork; there is no separate forwarding UnitOfWork 
 - [Setup and deployment](docs/setup-and-deployment.md)
 - [Acceptance criteria](docs/acceptance-tests.md)
 - [Shared Telegram navigation and feature handoff](docs/telegram-navigation.md)
+
+- [Task 06 permission evidence](docs/task06-permission-acceptance.md)
+- [Task 06 settings/booking evidence](docs/task06-settings-booking-acceptance.md)

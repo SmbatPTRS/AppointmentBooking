@@ -18,8 +18,10 @@
 - Exactly one BusinessSettings record, seeded during setup. Enforce a fixed key
   with a primary key and CHECK id = 1 (this enforces at most one; setup creates it).
 - Business settings include display name, staff label, timezone and currency.
-- Proposed safe v1 policy: timezone/currency cannot change once bookings exist;
-  owner can still change display labels. Confirm this policy before implementing.
+- Timezone/currency cannot change once any booking exists, including cancelled or
+  completed history. Owner can still change display labels.
+- Regional submissions independently advance the business coordination version;
+  booking rechecks versions under locks before saving. Label edits do not advance it.
 - Services are shared types (name/activation). Price/duration belong to StaffService.
 - Each staff/service pair is unique. Price >= 0; duration minutes > 0.
 - Fixed daily working hours: ONE WorkingHours record per employee, not a separate
@@ -37,7 +39,7 @@
 
 - Use the business timezone for calendar dates, fixed working hours and days off.
 - Store booking instants as timestamptz, passing UTC DateTime values to Npgsql.
-- Proposed defaults: SlotStepMinutes = 15, MaxAdvanceDays = 30; configurable.
+- Defaults: SlotStepMinutes = 15, MaxAdvanceDays = 30; configurable.
 - Define the v1 window as today through today + MaxAdvanceDays, inclusive, in the
   business timezone. Candidate starts must still be strictly later than now.
 - Candidate starts are opening + n * SlotStepMinutes. Duration is independent of step.
@@ -69,18 +71,17 @@
 - Confirmed bookings must not overlap for one employee. Different employees may overlap.
 - Cancellation releases availability. Check authorization before returning an
   idempotent success for an already-cancelled booking.
-- Proposed v1 eligibility: client cancels a confirmed booking only before its start;
-  staff/owner completes a confirmed booking only at/after its end. Owner/staff must
-  retain access to existing appointments when a profile is deactivated. Confirm
-  these boundary choices when agreeing service contracts.
+- Client cancels a confirmed booking only before its start; the relevant staff member
+  or owner completes it at/after its end. Relevant staff and owner retain appointment
+  access after profile deactivation.
 - Do not add staff/owner cancellation of clients' bookings unless explicitly agreed.
 - PostgreSQL overlap errors become a specific time-unavailable failure. Other
   database errors are not automatically booking conflicts.
 
 ## Telegram
 
-- Polling OR webhook, never both simultaneously.
-- Webhook validates X-Telegram-Bot-Api-Secret-Token.
+- Polling is the required transport. Webhook is deferred and not a release blocker.
+- One receiver per bot; polling removes an old webhook without dropping pending updates.
 - Polling advances offsets only after handling the corresponding update.
 - A business rejection is a handled interaction, not an infinite retry trigger.
 - Scope database work per operation; never share a DbContext across updates.

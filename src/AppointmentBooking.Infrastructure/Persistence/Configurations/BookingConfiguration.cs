@@ -23,12 +23,13 @@ public sealed class BookingConfiguration
                 "ck_bookings_duration",
                 "duration_minutes > 0");
 
+            // Keep model SQL identical for LF and CRLF source checkouts.
             table.HasCheckConstraint(
                 "ck_bookings_snapshot_duration",
                 """
                 ends_at_utc =
                     starts_at_utc + duration_minutes * INTERVAL '1 minute'
-                """);
+                """.ReplaceLineEndings("\n"));
 
             table.HasCheckConstraint(
                 "ck_bookings_status",
@@ -61,7 +62,7 @@ public sealed class BookingConfiguration
                     AND cancelled_at_utc IS NULL
                     AND completed_at_utc >= ends_at_utc
                 )
-                """);
+                """.ReplaceLineEndings("\n"));
         });
 
         builder.HasKey(booking => booking.Id);
