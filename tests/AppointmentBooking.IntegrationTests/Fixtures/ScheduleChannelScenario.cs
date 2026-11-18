@@ -30,7 +30,9 @@ public sealed class ScheduleChannelScenario : IAsyncDisposable
     public TimeZoneInfo Zone { get; }
     public string ScheduleUrl => $"/api/staff/{Staff.Id}/schedule";
     public string DaysUrl => $"/api/staff/{Staff.Id}/days-off";
-    public string AvailabilityUrl => $"/api/availability?staffId={Staff.Id}&staffServiceId={Offering.Id}&date={Date:yyyy-MM-dd}";
+    public string AvailabilityUrl => AvailabilityUrlFor(Date);
+    public string AvailabilityUrlFor(DateOnly date) =>
+        $"/api/availability?staffId={Staff.Id}&staffServiceId={Offering.Id}&date={date.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)}";
     public string LastMenu => Sender.SentMenus.Last().Text;
 
     private sealed record SettingsSnapshot(string Name, string Label, string Zone, string Currency);
@@ -113,13 +115,14 @@ public sealed class ScheduleChannelScenario : IAsyncDisposable
     };
 
     public Task Send(string text) => Deliver(Message(text));
-    public Task Click(string label) => Deliver(new Update
+    public Task Click(string label) => Callback(Sender.SentMenus.Last().Buttons.Single(b => b.Text == label).CallbackData);
+    public Task Callback(string data) => Deliver(new Update
     {
         Id = ++updateId,
         CallbackQuery = new CallbackQuery
         {
             Id = Guid.NewGuid().ToString(), ChatInstance = "schedule-channel",
-            Data = Sender.SentMenus.Last().Buttons.Single(b => b.Text == label).CallbackData,
+            Data = data,
             From = new Telegram.Bot.Types.User { Id = Employee.TelegramUserId, FirstName = "Employee" },
             Message = new Message { Chat = new Chat { Id = Employee.TelegramUserId } }
         }
