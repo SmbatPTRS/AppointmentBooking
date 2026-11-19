@@ -93,6 +93,162 @@ the real employee lock.
 - HTTP and Telegram handlers invoke the same application services.
 - Full setup works from the README; tests run on CI with a real test database.
 
+## Task 23 delivery evidence (polling-only scope)
+
+The team chose polling only. Webhook-secret, cross-transport and mode-switch acceptance
+items from the original plan remain outside the current scope; they are not
+implemented or claimed as passing.
+
+### First scenario: reply failure after commit
+
+`Task23BookingServiceDeliveryTests.FailedConfirmationSendAfterCommitRetriesWithoutCreatingAnotherBooking`
+uses a test-only confirmation adapter, the shared dispatcher, C's real BookingService and
+temporary PostgreSQL. It fails the reply after commit, verifies the saved booking, and
+redelivers the exact update in a fresh scope. Both attempts must return the same booking
+ID with exactly one saved row. This scenario first passed on November 11, before C's
+real Telegram handler was available; it remains an isolated service/dispatcher check.
+
+### Second scenario: repeated confirmation clicks through the real handler
+
+`Task23BookingConfirmationTests.ClickingTheRealConfirmationButtonTwiceKeepsOneSavedBooking`
+uses the registered production booking handlers to choose an employee, service, date and
+time. Reaching the review screen must not save a booking. The first Confirm click saves
+one confirmed booking; a new click on the same old button must leave its booking ID,
+RequestId and status unchanged, without another success reply. Both clicks are acknowledged,
+and the second receives an expired-button rejection.
+
+### Third scenario: failed confirmation reply through the real handler
+
+`Task23BookingConfirmationTests.FailedRealConfirmationReplyRetriesTheCommittedBookingWithTheSameRequestId`
+walks the production booking screens and fails the confirmation reply. A fresh database
+observer must find one confirmed booking despite the delivery exception, while the
+conversation retains its RequestId. Redelivering that exact update in a fresh operation
+scope must return the saved result with the same booking ID and RequestId, then clear
+the completed flow. The two attempts acknowledge the same callback and only the successful
+reply is recorded by the fake sender.
+
+### Fourth scenario: automatic polling retry and offset ordering
+
+`Task23BookingConfirmationTests.PollingRetriesFailedBookingReplyBeforeProcessingTheNextUpdate`
+prepares the real booking review, then gives the real polling receiver a confirmation
+(update 500) followed by /start (501). A fake Telegram HTTP adapter returns the updates;
+the real dispatcher, booking handler and BookingService process them against temporary
+PostgreSQL. The confirmation result send fails after commit.
+
+Before redelivery, an independent database observer must find one confirmed booking, the
+conversation must retain its RequestId, and neither the confirmation success nor the later
+welcome reply may have been sent. Polling automatically requests the same batch again.
+The retry keeps the saved booking ID/RequestId, sends one successful confirmation, then
+handles /start. Requested offsets are null, null, 502. Both confirmation attempts clear
+its callback spinner. Receiver shutdown is awaited with cancellation.
+
+### Fifth scenario: old confirmation after Cancel or expiry
+
+`Task23BookingConfirmationTests.OldConfirmationAfterCancelOrExpiryCannotCreateABooking`
+runs twice through the real booking screens. After reaching review, it either presses the
+shared Cancel button or advances a controlled clock by exactly 30 minutes. Clicking the
+previous Confirm button must receive an expired-screen acknowledgement, send no new reply
+or booking-success message, and leave no booking row for that client. State must be reset
+with no booking selection, RequestId or history. /back must still open the welcome menu.
+The clock is simulated; the expiry test does not wait 30 real minutes.
+
+### Sixth scenario: old confirmation after restart
+
+`Task23BookingConfirmationTests.OldConfirmationAfterRestartCannotCreateABooking`
+prepares a review, disposes that app host and starts a fresh host/provider against the
+same temporary database. The old Confirm button must be acknowledged as expired with no
+new messages or booking. The conversation has no remembered selection, RequestId or history,
+but the registered user remains persisted. /back opens the welcome menu without duplicating
+the user. This simulates lost in-memory state with a new host; it does not launch OS processes.
+
+### Seventh scenario: another sender using the same chat
+
+`Task23BookingConfirmationTests.AnotherSenderInTheSameChatCannotUseTheClientsConfirmation`
+sends the captured Confirm data as another registered person while keeping the original
+chat ID. It must be rejected before any booking is stored. The actual client's screen,
+revision and selected booking remain unchanged; their subsequent legitimate click can
+save exactly one booking for their own internal user ID.
+
+### Eighth scenario: Back invalidates the previous review
+
+`Task23BookingConfirmationTests.BackRejectsOldConfirmationAndAllowsANewSelectedTime`
+prepares a real review, presses Back to the time list and submits the old Confirm data.
+That click must be acknowledged as expired without a new reply or database row. The user
+then chooses another available time and reaches a new review. The original confirmation
+must remain invalid even though the screen route is book.confirm again. Only the new
+Confirm button may save one confirmed booking, at the newly selected UTC start.
+
+### Ninth scenario: A/B feature replies through automatic polling retry
+
+`Task23FeatureDeliveryTests.PollingRetriesCommittedFeatureReplyWithoutOverwritingALaterChange`
+runs two cases using the real registered handlers, application services, polling receiver
+and temporary PostgreSQL: A's employee self-rename and B's day-off creation. Each input
+(update 500) is followed by /start (501), and the result send fails after the write commits.
+
+Before returning the retry batch, an independent database observer verifies the committed
+change. The test then simulates a later edit in that temporary database: another rename,
+or removal of the newly added day off. Redelivery must not repeat the earlier mutation.
+The later name remains intact and the removed day off is not recreated. A returns its
+original saved result; B renders the current schedule. Both finish before the later
+welcome reply, and polling requests offsets null, null, 502.
+
+November 18 A/B verification: all eleven targeted Task 23 cases passed (11 passed,
+0 failed, 0 skipped). This includes the previous booking checks and both feature cases.
+No real Telegram request or message is sent. These checks now cover the polling receive
+loop, with simulated HTTP. The original branch Release suite passed; PR #31 is under
+review. See the combined-development verification below.
+
+November 17 verification: both Task 23 tests passed against temporary PostgreSQL
+(2 passed, 0 failed, 0 skipped). This was a targeted run, not a full-suite run.
+
+
+November 18 verification: the three Task 23 tests passed (3 passed, 0 failed, 0 skipped),
+including the real-handler failed-reply retry. Only the targeted Task 23 cases were run;
+this is not a full-suite result.
+
+November 18 polling verification: all four targeted Task 23 tests passed (4 passed,
+0 failed, 0 skipped), including automatic polling retry and offset ordering. No full-suite
+result is claimed for this step.
+
+November 18 stale-button verification: all six targeted Task 23 cases passed (6 passed,
+0 failed, 0 skipped), including Cancel and exact-boundary expiry. No full-suite result
+is claimed for this step.
+
+November 18 restart/ownership verification: all eight targeted Task 23 cases passed
+(8 passed, 0 failed, 0 skipped). No full-suite result is claimed for this step.
+
+November 18 Back verification: all nine targeted Task 23 cases passed (9 passed,
+0 failed, 0 skipped). No full-suite result is claimed for this step.
+
+### Test isolation after review
+
+Each `Task23BookingConfirmationTests` case owns a separate disposable PostgreSQL
+container, initialized and disposed by xUnit for that case. It does not use the shared
+Postgres collection database. This keeps `/book` independent of employees created by
+other tests, including large catalogue/pagination fixtures. The real dispatcher,
+booking handlers, application services and booking assertions remain unchanged.
+
+### Full Release verification — November 18, 2026
+
+`dotnet test -c Release --no-restore -m:1 -nr:false -p:UseSharedCompilation=false`
+with TRX logging passed all 450 tests: 170 unit and 280 integration, zero failures/skips.
+This includes eleven Task 23 cases. PostgreSQL tests used isolated temporary containers;
+Telegram delivery and Bot API responses were simulated. No production code was changed
+for these additions. The code and local verification are ready; B's review and C's
+co-review of booking-retry evidence remain required before final acceptance.
+
+### Combined-development verification after review — November 18, 2026
+
+PR #31 was updated with development `3dab2a6` (including Task 06 and its Windows
+line-ending fix). All eleven targeted Task 23 cases passed after per-case database
+isolation. The full combined Release suite then passed **557 tests: 170 unit and
+387 integration**, with zero failures or skipped tests.
+
+Command: `dotnet test -c Release --no-restore -m:1 -nr:false -p:UseSharedCompilation=false`
+with TRX logging (`task23-combined-development.trx`). This supersedes the original
+450-test branch-only result for integration acceptance. Tests use disposable PostgreSQL
+and fake Telegram delivery. Reviewer acceptance remains separate from automated results.
+
 ## Demonstration order
 
 1. Start application/database; show business name/timezone.
