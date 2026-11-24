@@ -90,6 +90,6 @@ employee isolation. OfferingTermsServiceTests additionally verifies accepted boo
 snapshots and stale tracked-state handling.
 
 Service/offering activation changes still depend on the agreed eligibility/version
-rules. Telegram forms and end-to-end booking/edit race acceptance follow in this
-feature branch.
+rules. Telegram forms use the same service. Joint booking/edit acceptance covers both lock
+orders for price/duration updates; see member-b-offering-overview.md.
 No entity, migration, booking, authorization or Telegram infrastructure code changes.

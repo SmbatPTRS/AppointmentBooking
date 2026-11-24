@@ -78,5 +78,13 @@ failed sends before/after writes. All writes use the same service as HTTP; see
 member-b-catalog-api.md for routes and numeric limits.
 
 Offering/shared-service activation remains pending A/C agreement on eligibility
-coordination. Joint booking/terms race acceptance follows in this feature branch.
+coordination. OfferingTermsConcurrencyTests exercises real BookingService/OfferingTermsService
+operations in separate scopes under the existing employee lock: both lock orders
+for price, duration and simultaneous term changes; duplicate offering creation;
+fresh authorization after a waiting employee is deactivated; cancellation while
+waiting. A pausing wrapper retains the real PostgreSQL lock. The test observes
+that the second backend is blocked by the specific holder PID before release.
+All coordinated operations have bounded cancellation and settle before disposal.
+Stored rows prove snapshot preservation or rejection of stale confirmation.
+This is price/duration serialization, not acceptance of global eligibility edits.
 Live Telegram transport smoke testing remains separate.
