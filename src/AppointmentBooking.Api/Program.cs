@@ -54,6 +54,7 @@ builder.Services.AddTelegramInfrastructure();
 // Member B: customer catalogue route and its application service.
 builder.Services.AddScoped<AppointmentBooking.Application.Catalog.CatalogService>();
 builder.Services.AddScoped<AppointmentBooking.Application.Catalog.OfferingManagementService>();
+builder.Services.AddScoped<AppointmentBooking.Application.Catalog.OfferingTermsService>();
 builder.Services.AddScoped<ITelegramHandler, AppointmentBooking.Api.Telegram.Handlers.CatalogHandler>();
 builder.Services.AddScoped<ITelegramHandler, SharedServicesHandler>();
 builder.Services.AddScoped<ITelegramHandler, CreateSharedServiceHandler>();

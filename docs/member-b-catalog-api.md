@@ -1,6 +1,6 @@
 # Member B: catalogue HTTP API
 
-These routes expose the existing CatalogService through the API-key policy used
+These routes expose B's catalogue services through the API-key policy used
 by the rest of the application. A configured key identifies the caller; request
 body fields and arbitrary identity headers cannot grant owner privileges.
 
@@ -10,6 +10,8 @@ body fields and arbitrary identity headers cannot grant owner privileges.
 | GET /api/staff/{staffId}/services | 200, active employee offerings | Authenticated user |
 | POST /api/services | 201, new active service type | Owner |
 | PATCH /api/services/{serviceId} | 200, renamed service type | Owner |
+| POST /api/staff/{staffId}/services | 201, new employee offering | Owner or linked active employee |
+| PUT /api/staff/{staffId}/services/{serviceId}/terms | 200, updated price/duration | Owner or linked active employee |
 
 ## Create a service
 
@@ -45,6 +47,35 @@ An empty UUID returns 400; a malformed UUID does not match the route and returns
 Reads use current database state on every request. The lists are not a reservation
 or a substitute for C's final booking checks under the employee lock.
 
+## Employee offering terms
+
+Creation accepts `{"serviceId":"<shared-service UUID>","price":0,"durationMinutes":30}`.
+`serviceId` identifies the shared service type, not an offering. All three fields
+must be present. Zero price is valid; an omitted price does not default to free.
+A successful response contains StaffServiceDto, including the new offering ID;
+Location points to the employee's protected management catalogue. Creation makes
+an active offering. An existing pair (including a disabled offering) returns 409
+with code `staff_service.already_exists`, leaving its original terms intact.
+
+Updating accepts `{"price":25.50,"durationMinutes":45}`. Both fields are required;
+PUT replaces them together and returns the existing offering with the updated
+terms. It does not create a missing offering. The route uses the shared service
+ID within the employee's catalogue. Offering and employee IDs cannot be changed
+through the body. Unknown fields, including `isActive`, return 400.
+
+Price must be between 0 and 9999999999.99 with at most two meaningful decimal
+places; 5.2500 is valid, 1.001 is not. Duration must be a positive whole number of
+minutes. Invalid values return the shared application validation error. Missing
+services/offerings return 404; denied management access returns 403. The owner may
+edit terms for inactive employees. A linked inactive employee cannot do so.
+
+OfferingTermsService acquires the existing employee transaction lock, reloads staff
+before authorization and reloads an already tracked offering before editing it.
+The same lock protects C's final price/duration check during booking. Existing
+booking snapshots and offering activation status are preserved. Completion is
+returned only after commit. Activation and shared-service eligibility changes
+remain a separate coordination task.
+
 ## Verification and remaining work
 
 CatalogEndpointsTests runs the real host, API-key authentication, AccessService,
@@ -53,6 +84,12 @@ owner impersonation attempts, creation/persistence, validation boundaries, activ
 filters, employee isolation, database state and Location reachability. Rename tests
 also check that offering terms and activation status remain intact.
 
-Service activation/deactivation and staff-offering configuration depend on the
-shared lock/version rules.
+OfferingTermsEndpointsTests covers creation/update, required and unexpected fields,
+price boundaries, duplicate handling, Location reachability, role checks and
+employee isolation. OfferingTermsServiceTests additionally verifies accepted booking
+snapshots and stale tracked-state handling.
+
+Service/offering activation changes still depend on the agreed eligibility/version
+rules. Telegram forms and end-to-end booking/edit race acceptance follow in this
+feature branch.
 No entity, migration, booking, authorization or Telegram infrastructure code changes.
