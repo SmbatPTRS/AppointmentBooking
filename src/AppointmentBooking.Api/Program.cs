@@ -75,6 +75,9 @@ builder.Services.AddScoped<AvailabilityService>();
 // Member B: schedule operations share the existing scoped repositories and lock.
 builder.Services.AddScoped<AppointmentBooking.Application.Scheduling.ScheduleChangeValidator>();
 builder.Services.AddScoped<AppointmentBooking.Application.Scheduling.ScheduleService>();
+foreach (var route in AppointmentBooking.Api.Telegram.Handlers.OfferingTermsHandler.Routes)
+    builder.Services.AddScoped<ITelegramHandler>(provider =>
+        ActivatorUtilities.CreateInstance<AppointmentBooking.Api.Telegram.Handlers.OfferingTermsHandler>(provider, route));
 foreach (var route in AppointmentBooking.Api.Telegram.Handlers.OfferingOverviewHandler.Routes)
     builder.Services.AddScoped<AppointmentBooking.Api.Telegram.ITelegramHandler>(provider =>
         ActivatorUtilities.CreateInstance<AppointmentBooking.Api.Telegram.Handlers.OfferingOverviewHandler>(provider, route));

@@ -1,8 +1,9 @@
 # Employee offering management overview (Member B)
 
-This block supplies authorized, read-only catalogue inspection for future editing
-screens. It does not change offering prices/durations/status, shared-service status,
-booking coordination versions, migrations or shared Telegram infrastructure.
+The original overview supplies authorized catalogue inspection. The offering-terms
+feature adds creation and price/duration editing from that screen using B's
+OfferingTermsService. Activation, booking coordination versions, migrations and
+shared Telegram infrastructure remain separate work.
 
 ## HTTP
 
@@ -41,6 +42,25 @@ without advancing pages again or adding duplicate history entries. Callback IDs,
 revisions and conversation ownership remain enforced by D's dispatcher. After a
 restart, old buttons are rejected and the user can reopen /offerings.
 
+## Create and edit offering terms
+
+From an employee overview, choose **Create offering**, select a shared service and
+send price plus duration, for example `25.50 30`. Selection includes active shared
+services without an existing offering for that employee; disabled offerings also
+count as existing. Use **Edit <service name>** to change a configured offering's
+price/duration, including a disabled offering. Both values must be supplied together.
+
+Use a decimal point for price and whole positive minutes for duration. Free offerings
+are valid (`0 30`). Prices with more than two meaningful decimal places or above
+9999999999.99 are rejected. Invalid input leaves the form open for correction.
+Back returns to the selection/overview and Cancel leaves the flow.
+
+After saving, the confirmation shows the committed terms. **View offerings** refreshes
+the current catalogue, so later edits are visible. If the confirmation send fails,
+retry renders the stored result and navigation; it does not repeat creation or
+replace a later HTTP edit. These are in-memory delivery guarantees within the
+existing dispatcher, not durable recovery after restart.
+
 ## Validation and remaining integration
 
 OfferingManagementTests covers authorization through HTTP and direct service calls,
@@ -52,5 +72,11 @@ The carried-over availability tests additionally cover catalogue changes and
 schedule/booking consistency; see acceptance-tests.md. Test fixtures change entity
 state only to establish scenarios; they do not implement management mutations.
 
-Price/duration/status mutation flows and shared-service activation remain pending
-A/C agreement on concurrency. Live Telegram transport smoke testing remains separate.
+OfferingTermsTelegramTests additionally covers create/edit forms, price parsing,
+validation, ownership, inactive staff, duplicate creation, selection pagination and
+failed sends before/after writes. All writes use the same service as HTTP; see
+member-b-catalog-api.md for routes and numeric limits.
+
+Offering/shared-service activation remains pending A/C agreement on eligibility
+coordination. Joint booking/terms race acceptance follows in this feature branch.
+Live Telegram transport smoke testing remains separate.
