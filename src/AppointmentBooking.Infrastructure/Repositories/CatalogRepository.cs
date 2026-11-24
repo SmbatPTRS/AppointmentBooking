@@ -49,6 +49,17 @@ public sealed class CatalogRepository(AppDbContext db) : ICatalogRepository
     public Task<StaffService?> GetOfferingAsync(Guid staffMemberId, Guid serviceId, CancellationToken ct) =>
         db.StaffServices.SingleOrDefaultAsync(o => o.StaffMemberId == staffMemberId && o.ServiceId == serviceId, ct);
 
+    public async Task<StaffService?> GetOfferingForUpdateAsync(Guid staffMemberId, Guid serviceId, CancellationToken ct)
+    {
+        var tracked = db.StaffServices.Local.SingleOrDefault(o =>
+            o.StaffMemberId == staffMemberId && o.ServiceId == serviceId);
+        if (tracked is null)
+            return await GetOfferingAsync(staffMemberId, serviceId, ct);
+        var entry = db.Entry(tracked);
+        await entry.ReloadAsync(ct);
+        return entry.State == EntityState.Detached ? null : tracked;
+    }
+
     public Task<StaffService?> GetOfferingByIdAsync(Guid offeringId, CancellationToken ct) =>
         db.StaffServices.AsNoTracking().SingleOrDefaultAsync(o => o.Id == offeringId, ct);
 
