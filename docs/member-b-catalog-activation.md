@@ -94,7 +94,44 @@ independent flags and unchanged terms. CatalogActivationTelegramTests covers fai
 prompts, explicit confirmation, target preservation after concurrent changes,
 foreign/cancelled buttons and reply retries after an opposite HTTP activation.
 
+## Joint booking acceptance
+
+CatalogActivationConcurrencyTests uses C's real BookingService, PostgreSQL locks
+and coordination repository in separate scopes. Test decorators only pause progress;
+they forward the real reads, version increments and lock acquisitions.
+
+Six cases cover shared-service and individual-offering deactivation:
+
+- With a booking paused after acquiring the staff lock, deactivation publishes the
+  version before waiting for that same lock. The test observes the exact PostgreSQL
+  waiter/holder relationship. The booking rejects the stale version, stores no row,
+  and the waiting deactivation commits afterward.
+- With a booking already holding its final coordination locks, the version increment
+  waits for the booking's PostgreSQL backend. The booking commits its original
+  price/duration/time snapshot before deactivation completes. Its idempotent replay
+  returns the same ID; a new request is rejected as inactive.
+- With a booking paused after its first version read, deactivation and reactivation
+  both finish before it resumes. Although all eligibility flags are active again,
+  the old confirmation is rejected. A fresh confirmation succeeds.
+
+The unrelated employee and business versions remain unchanged. All paused tasks
+are released and settled before scopes are disposed, including failure paths.
+As a sensitivity check, temporarily omitting B's two version-publication calls
+made both deactivate/reactivate tests fail because stale bookings were accepted.
+The source files were restored before the final successful suite.
+
+Validation on 2026-11-26, feature/erik-catalog-activation:
+
+```sh
+dotnet test AppointmentBooking.sln -c Release --nologo
+```
+
+731 tests passed: 170 unit and 561 integration, zero failures or skipped tests.
+PostgreSQL tests used containers; Telegram tests used fake delivery.
+
 ## Remaining acceptance
 
-Joint real-booking activation races and live bot testing remain to be verified.
+Live Telegram smoke testing and team review remain outstanding. This branch includes
+PR #33's offering-terms work; that PR was still open at verification time. The
+separate schedule-rollback block is not included in this branch's test count.
 No A/C/D implementation or schema changes are part of these services or adapters.
