@@ -33,8 +33,8 @@ The singleton business version and unrelated employees' versions are unchanged.
 
 OfferingActivationServiceTests verifies permissions, version scope, no-op behavior,
 missing resources, inactive parent rejection, stale tracked state, snapshots and
-rollback with an already published version. Joint booking races and adapters are
-subsequent stages; these service tests do not claim that coverage yet.
+rollback with an already published version. These service tests do not claim
+coverage of joint booking races; the remaining acceptance work is listed below.
 
 ## Shared-service implementation
 
@@ -66,10 +66,35 @@ gate, then verifies that a new offering cannot be created for the now inactive
 shared service. The duplicate-offering concurrency test likewise observes the new
 gate where the second creator now waits.
 
-## Remaining B stages
+## HTTP and Telegram controls
 
-HTTP and Telegram controls will call these B services. Confirmations must store an
-explicit target status and a committed result; failed sends render that result
-instead of toggling or replaying a mutation. Joint real-booking activation races,
-adapter acceptance and live bot testing remain later stages. No A/C/D implementation
-or schema changes are part of these services.
+| Route | Required body | Access |
+| --- | --- | --- |
+| PUT /api/services/{serviceId}/activation | `{"isActive":true}` or `{"isActive":false}` | Owner |
+| PUT /api/staff/{staffId}/services/{serviceId}/activation | Same explicit target | Owner or linked active employee |
+
+Both routes return the existing DTO with HTTP 200 after commit. Missing/null/non-boolean
+status and extra fields return 400. Credentials resolve the actor; body fields cannot
+supply another identity, change prices or redirect the employee/service pair.
+Missing resources and access/conflict errors use the existing shared mapping.
+
+In `/services`, the owner has separate Activate/Deactivate buttons beside service
+rename buttons. In `/offerings`, owner/employee activation actions sit beside the
+existing term editor. A confirmation stores the explicit target and selected IDs.
+Ordinary text never submits a confirmation. Back/Cancel use D's navigation.
+
+A committed result is stored before sending and gets its own saved route. Failed
+send retries restore that result without changing status again, even if an HTTP
+operation changed it afterward. View services/offerings reads the current state;
+Back does not leave completed forms in the overview ancestry. Confirmation buttons
+remain bound to D's sender/chat/revision checks.
+
+CatalogActivationEndpointsTests verifies roles, strict bodies, missing resources,
+independent flags and unchanged terms. CatalogActivationTelegramTests covers failed
+prompts, explicit confirmation, target preservation after concurrent changes,
+foreign/cancelled buttons and reply retries after an opposite HTTP activation.
+
+## Remaining acceptance
+
+Joint real-booking activation races and live bot testing remain to be verified.
+No A/C/D implementation or schema changes are part of these services or adapters.

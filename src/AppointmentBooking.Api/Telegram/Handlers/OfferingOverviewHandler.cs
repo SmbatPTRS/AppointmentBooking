@@ -65,7 +65,7 @@ public sealed class OfferingOverviewHandler(string route, OfferingManagementServ
         }
 
         var current = state.GetFeatureData<Draft>(Feature);
-        if (Route == "off.refresh" && state.Step == "off.saved" && !context.IsNavigation && !context.IsRetryRender)
+        if (Route == "off.refresh" && (state.Step is "off.saved" or "off.done") && !context.IsNavigation && !context.IsRetryRender)
         {
             // View offerings finishes the form: restore the existing overview ancestry
             // instead of leaving a second overview/service picker behind Back.
@@ -111,6 +111,8 @@ public sealed class OfferingOverviewHandler(string route, OfferingManagementServ
         AddPages(actions, selectedPage, rows.Count, "offerings", "off", state);
         actions.AddRange(rows.Skip(selectedPage * PageSize).Take(PageSize)
             .Select(row => state.ItemButton("Edit " + row.ServiceName, "off.edit", row.ServiceId)));
+        actions.AddRange(rows.Skip(selectedPage * PageSize).Take(PageSize).Select(row => state.ItemButton(
+            (row.IsActive ? "Deactivate " : "Activate ") + row.ServiceName, row.IsActive ? "off.off" : "off.on", row.ServiceId)));
         actions.Add(state.Button("Create offering", "off.add"));
         actions.Add(state.Button("Refresh", "off.refresh"));
         actions.AddRange(NavigationKeyboard.Create(state));
