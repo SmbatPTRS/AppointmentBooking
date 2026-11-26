@@ -36,17 +36,40 @@ missing resources, inactive parent rejection, stale tracked state, snapshots and
 rollback with an already published version. Joint booking races and adapters are
 subsequent stages; these service tests do not claim that coverage yet.
 
-## Remaining B stages
+## Shared-service implementation
 
-Shared-service activation needs serialization over its set of linked employees.
-The planned B-owned service gate must be acquired before enumerating all linked
-staff IDs and before any employee lock. Offering creation will acquire the same
-gate before its employee lock, preventing a new link from escaping enumeration.
-Affected staff versions must be published through an independent scope before
-ordered employee locks are acquired. Include inactive staff/offerings in that set.
-Different shared-service mutations must use the same staff ordering.
+SharedServiceActivationService requires the owner, opens a transaction and acquires
+B's ICatalogServiceLock for the shared service before reading linked employees.
+PostgresCatalogServiceLock uses a transaction-scoped advisory key in a separate
+catalogue namespace. Offering creation takes that gate before the employee lock;
+price/duration updates of existing offerings retain their employee lock only.
+
+The service reloads the shared entity and treats an unchanged status as a no-op.
+For a change it collects all linked staff IDs, including inactive employees and
+inactive offerings, and sorts them with one deterministic ordering. Deactivation
+publishes all affected staff versions in a separate DI scope/context before taking
+any employee lock. Reactivation publishes no invalidation. Ordered employee locks,
+a fresh owner check and a service reload precede the final status write and commit.
+No offering flags or booking snapshots are cascaded or rewritten.
+
+The singleton business version is unchanged. Staff-version granularity can also
+invalidate in-flight bookings for other services of an affected employee. Published
+versions intentionally survive a failed mutation, following A's existing contract.
+A deactivation waiting behind an earlier catalogue gate holder publishes only after
+obtaining that gate; this serializes mutations, rather than promising that every
+API invocation wins against a booking already holding final coordination locks.
+
+SharedServiceActivationTests covers owner access, version scope, inactive links,
+no-op/reactivation, cached entities, rollback and booking preservation. Its membership
+race observes the exact blocked PostgreSQL backend before releasing the service
+gate, then verifies that a new offering cannot be created for the now inactive
+shared service. The duplicate-offering concurrency test likewise observes the new
+gate where the second creator now waits.
+
+## Remaining B stages
 
 HTTP and Telegram controls will call these B services. Confirmations must store an
 explicit target status and a committed result; failed sends render that result
-instead of toggling or replaying a mutation. Full global coordination and live bot
-acceptance remain pending implementation and verification of those stages.
+instead of toggling or replaying a mutation. Joint real-booking activation races,
+adapter acceptance and live bot testing remain later stages. No A/C/D implementation
+or schema changes are part of these services.

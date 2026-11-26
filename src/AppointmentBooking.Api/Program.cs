@@ -55,6 +55,8 @@ builder.Services.AddTelegramInfrastructure();
 builder.Services.AddScoped<AppointmentBooking.Application.Catalog.CatalogService>();
 builder.Services.AddScoped<AppointmentBooking.Application.Catalog.OfferingManagementService>();
 builder.Services.AddScoped<AppointmentBooking.Application.Catalog.OfferingTermsService>();
+builder.Services.AddScoped<AppointmentBooking.Application.Abstractions.ICatalogServiceLock,
+    AppointmentBooking.Infrastructure.Catalog.PostgresCatalogServiceLock>();
 builder.Services.AddScoped<ITelegramHandler, AppointmentBooking.Api.Telegram.Handlers.CatalogHandler>();
 builder.Services.AddScoped<ITelegramHandler, SharedServicesHandler>();
 builder.Services.AddScoped<ITelegramHandler, CreateSharedServiceHandler>();

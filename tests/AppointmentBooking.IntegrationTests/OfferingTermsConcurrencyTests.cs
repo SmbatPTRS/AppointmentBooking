@@ -5,6 +5,7 @@ using AppointmentBooking.Application.Common;
 using AppointmentBooking.Application.Staff;
 using AppointmentBooking.Domain.Entities;
 using AppointmentBooking.Infrastructure.Persistence;
+using AppointmentBooking.Infrastructure.Catalog;
 using AppointmentBooking.Infrastructure.Transactions;
 using AppointmentBooking.IntegrationTests.Fixtures;
 using Microsoft.AspNetCore.TestHost;
@@ -199,7 +200,7 @@ public sealed class OfferingTermsConcurrencyTests(PostgresFixture fixture)
             await observer.OpenAsync(ct);
             while (true)
             {
-                Assert.False(second.IsCompleted, "The second operation must wait for this employee's actual PostgreSQL lock.");
+                Assert.False(second.IsCompleted, "The second operation must wait for a real PostgreSQL lock held by the first.");
                 await using var query = new NpgsqlCommand("SELECT @holder = ANY(pg_blocking_pids(@waiter))", observer);
                 query.Parameters.AddWithValue("holder", holderPid);
                 query.Parameters.AddWithValue("waiter", waiterPid);
@@ -232,6 +233,7 @@ public sealed class OfferingTermsConcurrencyTests(PostgresFixture fixture)
         public TaskCompletionSource<int> Waiter { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public int Attempts;
+        public int CatalogAttempts;
     }
 
     private sealed class ObservedStaffLock(AppDbContext db, LockGate gate) : IStaffOperationLock
@@ -251,6 +253,17 @@ public sealed class OfferingTermsConcurrencyTests(PostgresFixture fixture)
         }
     }
 
+    private sealed class ObservedCatalogLock(AppDbContext db, LockGate gate) : ICatalogServiceLock
+    {
+        public async Task AcquireAsync(Guid serviceId, CancellationToken ct)
+        {
+            await db.Database.OpenConnectionAsync(ct);
+            if (Interlocked.Increment(ref gate.CatalogAttempts) == 2)
+                gate.Waiter.TrySetResult(((NpgsqlConnection)db.Database.GetDbConnection()).ProcessID);
+            await new PostgresCatalogServiceLock(db).AcquireAsync(serviceId, ct);
+        }
+    }
+
     private sealed class Clock : IClock
     {
         public DateTime UtcNow => new(2026, 11, 24, 0, 0, 0, DateTimeKind.Utc);
@@ -259,6 +272,7 @@ public sealed class OfferingTermsConcurrencyTests(PostgresFixture fixture)
     private static void Configure(IServiceCollection services, LockGate gate)
     {
         services.AddSingleton<IClock>(new Clock());
+        services.AddScoped<ICatalogServiceLock>(provider => new ObservedCatalogLock(provider.GetRequiredService<AppDbContext>(), gate));
         services.AddScoped<IStaffOperationLock>(provider => new ObservedStaffLock(provider.GetRequiredService<AppDbContext>(), gate));
     }
 
