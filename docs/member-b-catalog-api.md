@@ -53,8 +53,9 @@ Creation accepts `{"serviceId":"<shared-service UUID>","price":0,"durationMinute
 `serviceId` identifies the shared service type, not an offering. All three fields
 must be present. Zero price is valid; an omitted price does not default to free.
 A successful response contains StaffServiceDto, including the new offering ID;
-Location points to the employee's protected management catalogue. Creation makes
-an active offering. An existing pair (including a disabled offering) returns 409
+Location points to the employee's protected management catalogue. Creation requires a currently active shared service and makes an active offering.
+An inactive shared service without an existing pair returns 409 with code
+`service.inactive` for both owner and employee; no offering is added. An existing pair (including a disabled offering) returns 409
 with code `staff_service.already_exists`, leaving its original terms intact.
 
 Updating accepts `{"price":25.50,"durationMinutes":45}`. Both fields are required;
@@ -66,8 +67,9 @@ through the body. Unknown fields, including `isActive`, return 400.
 Price must be between 0 and 9999999999.99 with at most two meaningful decimal
 places; 5.2500 is valid, 1.001 is not. Duration must be a positive whole number of
 minutes. Invalid values return the shared application validation error. Missing
-services/offerings return 404; denied management access returns 403. The owner may
-edit terms for inactive employees. A linked inactive employee cannot do so.
+services/offerings return 404; denied management access returns 403. An existing offering's terms remain editable when its shared service is inactive;
+this does not reactivate the shared service or make the offering publicly visible.
+The owner may edit terms for inactive employees. A linked inactive employee cannot do so.
 
 OfferingTermsService acquires the existing employee transaction lock, reloads staff
 before authorization and reloads an already tracked offering before editing it.

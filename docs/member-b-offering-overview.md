@@ -47,7 +47,10 @@ restart, old buttons are rejected and the user can reopen /offerings.
 From an employee overview, choose **Create offering**, select a shared service and
 send price plus duration, for example `25.50 30`. Selection includes active shared
 services without an existing offering for that employee; disabled offerings also
-count as existing. Use **Edit <service name>** to change a configured offering's
+count as existing. The application service rechecks shared-service activation on
+submission, including when the service was deactivated after the form opened.
+The same active-service creation policy applies to HTTP and direct service calls.
+Use **Edit <service name>** to change a configured offering's
 price/duration, including a disabled offering. Both values must be supplied together.
 
 Use a decimal point for price and whole positive minutes for duration. Free offerings

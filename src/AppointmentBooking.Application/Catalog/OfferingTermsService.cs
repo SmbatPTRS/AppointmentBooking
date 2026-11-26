@@ -37,7 +37,7 @@ public sealed class OfferingTermsService(ICatalogRepository catalog, IAccessServ
         await staff.GetByIdForUpdateAsync(staffId, ct);
         await access.RequireStaffManagementAsync(actor, staffId, ct);
         Validate(request);
-        var service = await catalog.GetServiceAsync(serviceId, ct)
+        var service = await catalog.GetServiceSnapshotAsync(serviceId, ct)
             ?? throw new AppException(ErrorCodes.ServiceNotFound, "Service not found.", AppErrorKind.NotFound);
         var offering = await catalog.GetOfferingForUpdateAsync(staffId, serviceId, ct);
         if (create)
@@ -45,6 +45,10 @@ public sealed class OfferingTermsService(ICatalogRepository catalog, IAccessServ
             if (offering is not null)
                 throw new AppException(DuplicateOfferingCode,
                     "This employee already has an offering for the service.", AppErrorKind.Conflict);
+            // Both adapters allow new offerings only for currently active service types.
+            if (!service.IsActive)
+                throw new AppException(ErrorCodes.ServiceInactive,
+                    "This shared service is inactive. Choose an active service.", AppErrorKind.Conflict);
             offering = new StaffService(staffId, serviceId, request.Price, request.DurationMinutes);
             catalog.Add(offering);
         }

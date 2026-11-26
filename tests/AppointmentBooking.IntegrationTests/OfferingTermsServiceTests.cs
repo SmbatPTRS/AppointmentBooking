@@ -261,6 +261,47 @@ public sealed class OfferingTermsServiceTests(PostgresFixture fixture)
         Assert.Equal(12.50m, (await verify.StaffServices.SingleAsync(o => o.Id == setup.Active.Id)).Price);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CreatingForInactiveSharedServiceIsRejectedForEmployeeAndOwner(bool owner)
+    {
+        await using var setup = await OfferingOverviewScenario.Create(fixture);
+        var serviceId = await AddService();
+        await using (var db = fixture.CreateContext())
+        {
+            (await db.Services.SingleAsync(s => s.Id == serviceId)).Deactivate();
+            await db.SaveChangesAsync();
+        }
+        await using var scope = setup.Host.Services.CreateAsyncScope();
+        var error = await Assert.ThrowsAsync<AppException>(() => Service(scope.ServiceProvider).CreateAsync(
+            new Actor(owner ? setup.Owner.Id : setup.Employee.Id), setup.Staff.Id, serviceId, new(25m, 30), default));
+        Assert.Equal(ErrorCodes.ServiceInactive, error.Code);
+        Assert.Equal(AppErrorKind.Conflict, error.Kind);
+        await using var verify = fixture.CreateContext();
+        Assert.False(await verify.StaffServices.AnyAsync(o => o.StaffMemberId == setup.Staff.Id && o.ServiceId == serviceId));
+    }
+
+    [Fact]
+    public async Task PreviouslyTrackedActiveServiceCannotBypassCurrentInactiveCreationRule()
+    {
+        await using var setup = await OfferingOverviewScenario.Create(fixture);
+        var serviceId = await AddService();
+        await using var scope = setup.Host.Services.CreateAsyncScope();
+        var cached = await scope.ServiceProvider.GetRequiredService<ICatalogRepository>().GetServiceAsync(serviceId, default);
+        Assert.True(cached!.IsActive);
+        await using (var db = fixture.CreateContext())
+        {
+            (await db.Services.SingleAsync(s => s.Id == serviceId)).Deactivate();
+            await db.SaveChangesAsync();
+        }
+        var error = await Assert.ThrowsAsync<AppException>(() => Service(scope.ServiceProvider).CreateAsync(
+            new Actor(setup.Employee.Id), setup.Staff.Id, serviceId, new(25m, 30), default));
+        Assert.Equal(ErrorCodes.ServiceInactive, error.Code);
+        await using var verify = fixture.CreateContext();
+        Assert.False(await verify.StaffServices.AnyAsync(o => o.StaffMemberId == setup.Staff.Id && o.ServiceId == serviceId));
+    }
+
     private static OfferingTermsService Service(IServiceProvider provider) => new(
         provider.GetRequiredService<ICatalogRepository>(), provider.GetRequiredService<IAccessService>(),
         provider.GetRequiredService<IStaffRepository>(), provider.GetRequiredService<IUnitOfWork>(),

@@ -272,6 +272,30 @@ public sealed class OfferingTermsTelegramTests(PostgresFixture fixture)
         Assert.Equal(75, saved.DurationMinutes);
     }
 
+    [Fact]
+    public async Task ServiceDeactivatedAfterSelectionRejectsTelegramCreationWithoutAddingAnOffering()
+    {
+        await using var setup = await OfferingOverviewScenario.Create(fixture);
+        var service = await NewService();
+        await using var bot = new TelegramManagementBot(fixture.ConnectionString, setup.Owner.TelegramUserId);
+        var user = setup.Employee.TelegramUserId;
+        await Open(bot, setup);
+        await bot.Click("Create offering", user);
+        await FindService(bot, service.Name, user);
+        await bot.Click(service.Name, user);
+        await using (var db = fixture.CreateContext())
+        {
+            (await db.Services.SingleAsync(s => s.Id == service.Id)).Deactivate();
+            await db.SaveChangesAsync();
+        }
+        await bot.Send("25 30", user);
+        Assert.Contains("inactive", bot.Sender.SentMenus.Last().Text);
+        await bot.Click("Back", user);
+        Assert.DoesNotContain(bot.Sender.SentMenus.Last().Buttons, b => b.Text == service.Name);
+        await using var verify = fixture.CreateContext();
+        Assert.False(await verify.StaffServices.AnyAsync(o => o.StaffMemberId == setup.Staff.Id && o.ServiceId == service.Id));
+    }
+
     private static async Task Open(TelegramManagementBot bot, OfferingOverviewScenario setup)
     {
         await bot.Send("/offerings", setup.Employee.TelegramUserId);

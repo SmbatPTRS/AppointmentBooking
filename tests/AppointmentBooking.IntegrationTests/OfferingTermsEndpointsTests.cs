@@ -234,6 +234,45 @@ public sealed class OfferingTermsEndpointsTests(PostgresFixture fixture)
         Assert.DoesNotContain((await customer.GetFromJsonAsync<StaffServiceDto[]>(Collection(setup)))!, o => o.Id == result.Id);
     }
 
+    [Theory]
+    [InlineData("owner")]
+    [InlineData("employee")]
+    public async Task InactiveSharedServiceRejectsHttpCreationWithAConflict(string key)
+    {
+        await using var setup = await OfferingOverviewScenario.Create(fixture);
+        var service = await NewService();
+        await using (var db = fixture.CreateContext())
+        {
+            (await db.Services.SingleAsync(s => s.Id == service.Id)).Deactivate();
+            await db.SaveChangesAsync();
+        }
+        using var client = setup.Client(key);
+        using var response = await client.PostAsJsonAsync(Collection(setup),
+            new { serviceId = service.Id, price = 25m, durationMinutes = 30 });
+        await AssertError(response, HttpStatusCode.Conflict, ErrorCodes.ServiceInactive);
+        await using var verify = fixture.CreateContext();
+        Assert.False(await verify.StaffServices.AnyAsync(o => o.StaffMemberId == setup.Staff.Id && o.ServiceId == service.Id));
+        Assert.False((await verify.Services.SingleAsync(s => s.Id == service.Id)).IsActive);
+    }
+
+    [Fact]
+    public async Task ExistingOfferingForInactiveSharedServiceCanStillHaveItsTermsUpdated()
+    {
+        await using var setup = await OfferingOverviewScenario.Create(fixture);
+        using var client = setup.Client();
+        using var response = await client.PutAsJsonAsync($"{Collection(setup)}/{setup.InactiveService.Id}/terms",
+            new { price = 45m, durationMinutes = 55 });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var saved = (await response.Content.ReadFromJsonAsync<StaffServiceDto>())!;
+        Assert.Equal(setup.Hidden.Id, saved.Id);
+        Assert.Equal(45m, saved.Price);
+        Assert.Equal(55, saved.DurationMinutes);
+        Assert.True(saved.IsActive);
+        await using var verify = fixture.CreateContext();
+        Assert.False((await verify.Services.SingleAsync(s => s.Id == setup.InactiveService.Id)).IsActive);
+        Assert.DoesNotContain((await client.GetFromJsonAsync<StaffServiceDto[]>(Collection(setup)))!, o => o.Id == saved.Id);
+    }
+
     private static string Collection(OfferingOverviewScenario setup) => $"/api/staff/{setup.Staff.Id}/services";
     private static string Terms(OfferingOverviewScenario setup) => $"{Collection(setup)}/{setup.ActiveService.Id}/terms";
     private static StringContent Json(string body) => new(body, Encoding.UTF8, "application/json");
