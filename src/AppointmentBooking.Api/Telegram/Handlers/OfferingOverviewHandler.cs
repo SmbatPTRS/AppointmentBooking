@@ -5,13 +5,13 @@ using AppointmentBooking.Application.Common;
 
 namespace AppointmentBooking.Api.Telegram.Handlers;
 
-/// <summary>B's management overview. Mutations will use a separately agreed lock contract.</summary>
+/// <summary>B's management overview; terms forms delegate writes to OfferingTermsService.</summary>
 public sealed class OfferingOverviewHandler(string route, OfferingManagementService offerings,
     ITelegramMessageSender sender, IClock clock) : ITelegramHandler
 {
     public static readonly IReadOnlyList<string> Routes =
         ["offerings", "off.staff", "off.next", "off.prev", "off.refresh", "off.people.next", "off.people.prev"];
-    private const string Feature = "off.overview";
+    internal const string Feature = "off.overview";
     private const string Transition = "off.overview.transition";
     private const int PageSize = 10;
     public string Route => route;
@@ -65,6 +65,16 @@ public sealed class OfferingOverviewHandler(string route, OfferingManagementServ
         }
 
         var current = state.GetFeatureData<Draft>(Feature);
+        if (Route == "off.refresh" && state.Step == "off.saved" && !context.IsNavigation && !context.IsRetryRender)
+        {
+            // View offerings finishes the form: restore the existing overview ancestry
+            // instead of leaving a second overview/service picker behind Back.
+            while (state.Step != "off.staff" && state.CanGoBack) state.GoBack(clock.UtcNow);
+            current = state.GetFeatureData<Draft>(Feature) ?? current;
+            if (state.Step != "off.staff") state.BeginStep("off.staff", clock.UtcNow);
+            state.SetFeatureData(Transition, true);
+            transitioned = true;
+        }
         if (Route == "off.staff" && context.ItemId is { } selected &&
             !context.IsNavigation && !context.IsRetryRender && !transitioned)
         {
@@ -99,6 +109,9 @@ public sealed class OfferingOverviewHandler(string route, OfferingManagementServ
             (rows.Count == 0 ? "No offerings configured." : $"Page {selectedPage + 1} of {PageCount(rows.Count)}\n\n" + string.Join("\n\n", lines));
         List<TelegramMenuButton> actions = [];
         AddPages(actions, selectedPage, rows.Count, "offerings", "off", state);
+        actions.AddRange(rows.Skip(selectedPage * PageSize).Take(PageSize)
+            .Select(row => state.ItemButton("Edit " + row.ServiceName, "off.edit", row.ServiceId)));
+        actions.Add(state.Button("Create offering", "off.add"));
         actions.Add(state.Button("Refresh", "off.refresh"));
         actions.AddRange(NavigationKeyboard.Create(state));
         await sender.SendMenuAsync(context.ChatId, text, actions, ct);

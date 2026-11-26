@@ -1,6 +1,6 @@
 # Member B handoff
 
-Updated 2026-11-18. Tasks 07–09 have application/repository groundwork;
+Updated 2026-11-24. Tasks 07–09 have application/repository groundwork;
 Tasks 10–12 and end-to-end acceptance are not complete.
 
 ## Implemented
@@ -12,7 +12,13 @@ Tasks 10–12 and end-to-end acceptance are not complete.
   Owner Telegram creation/rename and HTTP rename are merged (PR #26).
 - Protected read-only offering inspection via HTTP and /offerings is merged (PR #29),
   including inactive rows, scoped employee selection, pagination and retry recovery.
-  See member-b-offering-overview.md. Offering mutations remain pending A/C agreement.
+  See member-b-offering-overview.md.
+- This branch adds offering creation and atomic price/duration editing through HTTP
+  and Telegram. OfferingTermsService uses the existing employee transaction lock,
+  refreshes tracked staff before authorization and reloads tracked offerings before
+  mutation. Creation rejects existing pairs, including disabled offerings; edits
+  preserve offering status, IDs and all accepted booking snapshots.
+  Shared-service/offering activation remains pending eligibility coordination.
 
 - Catalog DTOs and CatalogRules enforce trimmed service names up to 200 characters,
   numeric(12,2) price bounds and at most two meaningful decimal places.
@@ -40,14 +46,21 @@ Tasks 10–12 and end-to-end acceptance are not complete.
 ## Verification and limits
 
 `dotnet test AppointmentBooking.sln -c Release --nologo`:
-170 unit tests and 357 integration cases passed on 2026-11-18
-on feature/erik-schedule-channel-tests, based on development da1b665.
+170 unit tests and 507 integration cases passed on 2026-11-24
+on feature/erik-offering-terms (677 total, zero failures or skipped tests).
+The feature starts from development dc99ce1, including schedule channel acceptance,
+Task 06 setup checks and Task 23 delivery tests.
 
-This branch adds 41 cross-channel acceptance cases (7 hours/timezone, 12 days off,
-14 booking protection and 8 delivery recovery). They exercise real authorization,
-HTTP endpoints, Telegram handlers, PostgreSQL persistence and availability with
-fake Telegram delivery. Settings fixture changes are restored after each test.
-See member-b-schedule-channel-acceptance.md for the matrix, commands and limits.
+OfferingTermsServiceTests covers access, numeric limits, duplicate pairs, missing
+resources, snapshots and stale tracked state. OfferingTermsEndpointsTests adds
+HTTP required-field/role/route checks. OfferingTermsTelegramTests verifies forms,
+paging, navigation and safe send retries after newer HTTP edits. Joint real-service
+races cover price/duration edits versus booking in both lock orders, duplicate
+creation, deactivation while waiting and cancellation. See member-b-catalog-api.md
+and member-b-offering-overview.md.
+
+The merged cross-channel schedule block adds 41 cases; see
+member-b-schedule-channel-acceptance.md for its matrix, commands and limits.
 
 Schedule tests cover persistence, duplicate constraints, scoped repository lookup,
 input errors, denied hours/day-off additions, future booking conflicts and removal.
@@ -74,12 +87,13 @@ authorization implementation is supplied.
   First-time hours creation, updating the same row, foreign day-off deletion,
   denied reads/removal and isolated hours reads are covered with an access-service
   double. These tests do not verify the production authorization implementation.
-- Complete remaining CatalogService mutations; creation and active browsing are merged.
-  Coordinate shared-service/offering lock ordering with A/C before mutations.
-- Complete remaining catalogue management HTTP/Telegram operations for Tasks 10/11.
-  Schedule adapters are implemented; customer catalogue browsing is also implemented.
+- Complete shared-service/offering activation after agreeing eligibility-change
+  coordination with A/C. Employee-scoped price/duration serialization uses the
+  existing shared employee lock and is covered by joint booking acceptance.
+- Remaining catalogue HTTP/Telegram operations for Tasks 10/11: activation controls.
+  Creation, name editing, offering terms, inspection and schedule adapters are implemented.
 - Task 12 booking-versus-schedule tests now exercise C's actual booking code.
-  Complete catalogue mutation coordination acceptance and live Telegram smoke tests;
+  Complete activation coordination acceptance and live Telegram smoke tests;
   coordination-version implementations remain A/C-owned.
 - Reviewers: A for Task 08; C additionally reviews transaction/lock boundaries.
 
@@ -89,4 +103,4 @@ A owns entities, enums, mappings, migrations, shared access and settings behavio
 C owns booking lifecycle, booking queries and the employee transaction lock.
 D owns Telegram transport, shared state, sender and routing. B consumes these
 contracts and owns catalogue/schedule/availability services and feature adapters.
-No schema or coordination-version changes are introduced by this schedule branch.
+No schema or coordination-version changes are introduced by this offering-terms branch.
