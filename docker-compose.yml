@@ -24,6 +24,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # Runtime configuration only; this file is excluded from the Docker image.
+    env_file:
+      - ${API_ENV_FILE:-./src/AppointmentBooking.Api/.env}
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_HTTP_PORTS: "8080"

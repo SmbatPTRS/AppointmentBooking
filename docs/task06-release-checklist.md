@@ -52,13 +52,13 @@ do not add them together to estimate the full suite.
 
 | Gate | Status / next action | Owner |
 | --- | --- | --- |
-| Service activation/deactivation and offering creation/editing/activation through HTTP and Telegram | Pending; shared-service creation/rename and offering inspection are implemented. Add remaining mutation validation, permissions and acceptance | B |
-| Catalogue mutation lock/version integration | Pending agreed lock order and joint acceptance against actual booking creation | B/C; A for requested model changes |
+| Service activation/deactivation and offering creation/editing/activation through HTTP and Telegram | PR #33 offering creation/terms editing is merged. Service/offering activation controls and their acceptance remain pending | B |
+| Catalogue mutation lock/version integration | PR #33 includes employee-lock coordination and both booking/terms-edit lock orders. Activation coordination remains pending | B/C; A for requested model changes |
 | Simultaneous same-client/RequestId submissions across different employees | Still pending: the new suite covers simultaneous identical requests and sequential cross-employee key reuse, plus deterministic unique-conflict recovery; it does not explicitly exercise simultaneous cross-employee submissions under the same key | C |
-| Real booking Telegram confirmation/send-retry acceptance | Evidence pending for the full feature through the real dispatcher; infrastructure/sample-state retry tests alone do not establish committed-booking behavior | C/D |
-| Integration CI | Pending: current workflow only runs unit tests. Add PostgreSQL integration job and record successful CI | D |
+| Real booking Telegram confirmation/send-retry acceptance | Task 23 is merged with real booking-handler, dispatcher and database retry evidence; live feature demonstration remains pending | C/D |
+| Integration CI | Task 24 adds separate unit/PostgreSQL jobs and retained diagnostics; first GitHub run pending publication | D |
 | Installed PostgreSQL setup rehearsal | Pending documented fresh setup against installed PostgreSQL | A/D |
-| Full Compose/deployment rehearsal | Pending image/startup/health, secret/environment mapping and persistence checks; Compose currently lacks per-user API-key mapping | D |
+| Full Compose/deployment rehearsal | Local image/migrations/seed/health/persistence smoke passed November 25; runtime API-key forwarding added. Independent target deployment and live flow remain pending; see setup instructions | D |
 | Clean-source setup rehearsal | Passed locally: clean export, restore/build, real EF database update, seed twice, API/DB health and Swagger. Independent clean-machine/installed-PostgreSQL reproduction remains pending | A verified; D/team reproduce |
 | Live polling and Swagger demonstration | Pending owner, two employees and clients: /start, management, booking, cancellation, completion, wrong-role denial, restart/retry and separate Swagger keys | A/B/C/D |
 | Team model and acceptance review | Pending C review of A work/booking constraints; B review of schedule/catalogue mappings; D review of setup/deployment; each owner signs off their evidence | A coordinates; B/C/D review |

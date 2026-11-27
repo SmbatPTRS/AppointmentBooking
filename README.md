@@ -9,8 +9,9 @@ an HTTP API. Owner and employee operations use shared application permission che
 Implemented: shared entities/mappings, API-key identity, staff/business management
 through HTTP and Telegram, scheduling, availability, booking lifecycle and polling.
 Catalogue browsing, owner service creation/rename, and protected offering inspection
-are available through HTTP and Telegram. Service activation and offering mutations
-remain B work. Webhook is deferred. CI currently runs unit tests only.
+are available through HTTP and Telegram. Offering creation and price/duration editing
+are also integrated. Service and offering activation controls remain B work. Webhook is deferred. The Task 24 workflow runs unit and PostgreSQL
+integration tests; its first GitHub run is pending publication.
 
 ## Quick start
 

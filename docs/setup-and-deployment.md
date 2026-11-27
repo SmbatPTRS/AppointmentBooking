@@ -11,7 +11,8 @@ for `dotnet` below if the default PATH selects another installation.
 Identity, staff/settings management, schedule management, availability, booking
 lifecycle and Telegram polling are implemented. Catalogue browsing, owner service
 creation/rename, and protected offering inspection are available through HTTP and
-Telegram. Service activation and offering mutations remain B work.
+Telegram. Offering creation and price/duration editing are integrated; service and
+offering activation controls remain B work.
 Webhook is deferred and is not a release requirement. Select Polling when enabling
 Telegram; selecting Webhook currently provides no update receiver.
 
@@ -100,7 +101,8 @@ To register real users, configure a bot token in secret configuration, set
 `Telegram__Enabled=true` and `Telegram__Mode=Polling`, and restart. The owner and
 prospective employees/clients each send `/start`; the reply includes their Telegram
 sender ID. The owner can then add staff through Staff management. Staff must already
-have opened the bot. Remaining offering-management screens are pending B work;
+have opened the bot. Offering creation and price/duration editing are available;
+activation controls remain pending B work;
 a fully UI-driven catalogue demonstration is not yet accepted.
 
 For Swagger/API access, configure separate secret keys for registered identities:
@@ -126,9 +128,13 @@ The PostgreSQL fixture creates disposable test containers and applies migrations
 never substitute a valuable development database. It currently does not accept an
 installed-PostgreSQL test connection. Unit tests can run without Docker.
 
-The current CI restores/builds the solution and runs unit tests only. D still needs
-to add integration CI and record a successful run. See
-[release acceptance](task06-release-checklist.md) for local results and pending work.
+The Task 24 workflow restores/builds the solution in separate unit and integration
+jobs. The integration job uses the existing PostgreSQL 16 Testcontainers fixtures
+on the runner's Docker engine; it does not need a shared PostgreSQL service or a
+developer connection string. Both jobs upload TRX, console output and test diagnostics
+for seven days, including when tests fail. Download them from the Actions run's
+Artifacts section. A successful GitHub run still needs to be recorded after publication.
+See [release acceptance](task06-release-checklist.md) for the remaining team gates.
 
 ## Full development Compose setup
 
@@ -138,10 +144,17 @@ After migrations and seed have been applied to the selected database:
 docker compose --env-file src/AppointmentBooking.Api/.env --profile full up -d --build --wait
 ```
 
-Swagger is at `http://localhost:8080/swagger`. Compose explicitly maps database,
-Telegram and owner settings. It does not currently map per-user API keys: D must
-supply the appropriate environment/secrets mapping for protected HTTP demonstrations
-in the container. The API's `.env` file is excluded from the image.
+Swagger is at `http://localhost:8080/swagger`. Compose loads the API `.env` at
+runtime, including uncommented `ApiAccess__Keys__N__Key` and matching
+`ApiAccess__Keys__N__TelegramUserId` entries. Configure complete entries only; omit
+unused entries rather than supplying blank keys or zero IDs. The explicit Compose
+connection string uses `Host=postgres`; local host tools use `localhost`.
+
+For a configuration file outside the checkout, set `API_ENV_FILE` to its absolute
+path and also pass that same file with Compose `--env-file` for interpolation.
+The default runtime path is `src/AppointmentBooking.Api/.env`. Runtime environment
+variables remain visible to people with Docker access; the file is not copied into
+the image. Keep the application on one instance with one polling receiver.
 
 The PostgreSQL volume preserves data. Changing an initialization password in `.env`
 does not change an existing role. `docker compose ... down` preserves the volume;
@@ -149,6 +162,116 @@ does not change an existing role. `docker compose ... down` preserves the volume
 
 For moving valuable data to a fresh container, use `pg_dump`/`pg_restore` instead of
 pre-creating the same schema with migrations. Do not bake database data into images.
-Installed-PostgreSQL and full Compose rehearsals are pending. A clean-source local
+Installed-PostgreSQL rehearsal is pending. A local full Compose smoke check passed
+on November 25 (details below). A clean-source local
 restore/build, EF migration/seed and host-health rehearsal passed using disposable
 PostgreSQL, with polling disabled; see the release checklist.
+
+## Windows PowerShell setup
+
+Use an installed .NET 8 SDK and Docker Desktop in Linux-container mode. From the
+repository root, copy the example only when the local file does not already exist:
+
+```powershell
+if (-not (Test-Path src/AppointmentBooking.Api/.env)) {
+    Copy-Item src/AppointmentBooking.Api/.env.example src/AppointmentBooking.Api/.env
+}
+# Edit the new file locally: passwords, owner ID, and optional complete API-key pairs.
+docker compose --env-file src/AppointmentBooking.Api/.env config --quiet
+docker compose --env-file src/AppointmentBooking.Api/.env up -d --wait postgres
+dotnet tool restore
+dotnet restore AppointmentBooking.sln
+dotnet build AppointmentBooking.sln -c Release
+Set-Location src/AppointmentBooking.Api
+$env:ASPNETCORE_ENVIRONMENT = 'Development'
+dotnet ef database update --project ../AppointmentBooking.Infrastructure --startup-project .
+dotnet run -c Release --no-build --no-launch-profile -- --seed-business-settings --Seed:DisplayName="Appointment Studio" --Seed:StaffLabel="Employee" --Seed:TimeZoneId="Asia/Yerevan" --Seed:CurrencyCode="AMD"
+dotnet run --launch-profile http
+```
+
+Press Ctrl+C to stop the host. Return to the repository root before running Compose
+or solution-wide tests. `config --quiet` checks YAML/interpolation without printing
+resolved passwords or API keys.
+
+## Startup, shutdown and preserving data
+
+Check `/health`, `/health/db` and (in Development) `/swagger/index.html`. The database
+health endpoint proves connectivity only; check migration status and seed separately.
+Keep Telegram disabled during setup. Enable Polling only after setup and stop any
+other process using that bot token. Ctrl+C cancels polling and the current wait;
+conversation memory is lost on process restart, while committed bookings remain.
+
+From the repository root, stop the Compose app gracefully with:
+
+```bash
+docker compose --env-file src/AppointmentBooking.Api/.env --profile full stop -t 30 api
+```
+
+`down` removes containers and their network while preserving the named database
+volume. Do not use `down -v` for valuable data. Keep the same Compose project name
+and volume when recreating containers. A volume is persistence, not a backup.
+
+For installed PostgreSQL (or the host-published Docker port), use PostgreSQL client
+tools to back up, allowing a password prompt or a local pgpass file:
+
+```bash
+pg_dump -h localhost -p 5432 -U appointment_app -d appointmentbooking -Fc -f appointmentbooking.backup
+# Restore into a separately created empty database, not a populated working database.
+pg_restore -h localhost -p 5432 -U appointment_app -d appointmentbooking_restored --no-owner appointmentbooking.backup
+```
+
+Protect backup files like database credentials. When restoring a complete dump, do
+not first create the same application schema with EF migrations. Verify restored
+rows and migration history before changing the app's connection string.
+
+## Remaining Task 24 acceptance
+
+The CI changes need a real GitHub run after publication. Installed-PostgreSQL setup,
+independent teammate reproduction and the complete live polling/Swagger demonstration
+still need evidence. Catalogue activation and the feature work not yet merged remain
+owned by their feature authors. Webhook/HTTPS webhook deployment stays deferred.
+## Task 24 local verification — November 25, 2026
+
+Branch `feature/member-d-task-24-deployment-ci` started from development `dc99ce1`.
+The full Release suite passed **598 tests: 170 unit and 428 integration**, with
+zero failures or skips. Integration tests used their disposable PostgreSQL 16
+fixtures and fake Telegram. Workflow validation with actionlint 1.7.12 passed;
+GitHub execution is still pending publication.
+
+The existing Dockerfile built successfully. An isolated Compose project, fake
+credentials, separate host ports and its own volume were used to verify:
+
+- Compose YAML/interpolation and forwarding of a complete API-key pair.
+- Real EF migration application to an empty PostgreSQL database.
+- The container seed command run twice without duplicate settings.
+- HTTP 200 from `/health`, `/health/db` and `/swagger/index.html`.
+- A saved settings edit surviving recreation of both API and database containers.
+- Absence of `.env`, `AGENTS.md` and `Local-context` in the final application image.
+
+The rehearsal containers/network were removed; the isolated test volume was retained.
+No developer database, live bot credentials or real Telegram delivery were used.
+This is a local smoke check, not the independent teammate or complete feature-flow
+acceptance. Those checks and an actual integration CI run remain outstanding.
+
+### Reverification with merged PR #33 — November 27, 2026
+
+Task 24 was fast-forwarded to development `32a0fcc`, preserving its local CI and
+configuration changes. This includes offering creation/terms editing and the
+inactive-service creation fix. No merge conflicts occurred.
+
+The final full Release rerun passed **684 tests: 170 unit and 514 integration**,
+with zero failures or skips, using `dotnet test -c Release --no-build --no-restore`
+and TRX logging. The initial run had one Docker API timeout while starting an
+upgrade-test container, before migrations; the full rerun without concurrent
+image/deployment work passed. No assertion was removed or relaxed.
+
+The updated image built successfully and workflow validation passed. A fresh,
+separate Compose database was migrated and seeded twice. Health, database health,
+Swagger and an authenticated API request with a forwarded fake key returned 200.
+A saved settings edit survived recreation of both containers. Final-image private
+file checks passed; rehearsal containers/network were removed and the isolated
+volume retained. No live Telegram credentials or developer database were used.
+
+These are local results. Actual GitHub CI execution, independent teammate setup,
+installed-PostgreSQL rehearsal and the complete live demonstration remain separate
+acceptance steps. Service/offering activation controls remain pending integration.

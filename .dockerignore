@@ -15,3 +15,4 @@
 **/*.backup
 artifacts/
 AGENTS.md
+Local-context/
