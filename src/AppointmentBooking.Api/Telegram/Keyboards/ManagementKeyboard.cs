@@ -9,7 +9,7 @@ public static class ManagementKeyboard
         if (owner || anyStaff) yield return ("Staff appointments", "appointments");
         if (owner || activeStaff)
         {
-            yield return ("Offerings", "catalog");
+            yield return ("Offerings", "offerings");
             yield return ("Schedule", "schedule");
             yield return ("Display name", "profile");
         }
