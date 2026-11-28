@@ -1,19 +1,45 @@
 name: CI
 on:
   push:
-    branches: [main, development]
+    branches: [master, development]
   pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  build-and-unit-tests:
+  tests:
+    name: ${{ matrix.suite }} tests
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: unit
+            project: tests/AppointmentBooking.UnitTests/AppointmentBooking.UnitTests.csproj
+          - suite: integration
+            project: tests/AppointmentBooking.IntegrationTests/AppointmentBooking.IntegrationTests.csproj
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+      - name: Verify Docker for disposable PostgreSQL 16 fixtures
+        if: matrix.suite == 'integration'
+        run: docker info
       - run: dotnet tool restore
       - run: dotnet restore AppointmentBooking.sln
       - run: dotnet build AppointmentBooking.sln --configuration Release --no-restore
-      - run: dotnet test tests/AppointmentBooking.UnitTests/AppointmentBooking.UnitTests.csproj --configuration Release --no-build --logger trx --results-directory TestResults
+      - name: Run tests
+        shell: bash
+        run: |
+          mkdir -p TestResults/${{ matrix.suite }}
+          dotnet test ${{ matrix.project }} --configuration Release --no-build --no-restore --logger trx --results-directory TestResults/${{ matrix.suite }} --blame-hang --blame-hang-timeout 3m 2>&1 | tee TestResults/${{ matrix.suite }}/console.log
+      - name: Save test reports and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.suite }}
+          path: TestResults/${{ matrix.suite }}/
+          if-no-files-found: warn
+          retention-days: 7
