@@ -53,6 +53,8 @@ public sealed class SharedServicesHandler(CatalogService catalog, ITelegramMessa
             .Select(service => state.ItemButton(
                 $"{service.Name} ({(service.IsActive ? "active" : "inactive")})", "services.rename", service.Id))
             .ToList();
+        buttons.AddRange(services.Skip(page * PageSize).Take(PageSize).Select(service => state.ItemButton(
+            (service.IsActive ? "Deactivate " : "Activate ") + service.Name, service.IsActive ? "svc.off" : "svc.on", service.Id)));
         if (page > 0)
             buttons.Add(state.ItemButton("Previous page", Route, services[(page - 1) * PageSize].Id));
         if (page < lastPage)

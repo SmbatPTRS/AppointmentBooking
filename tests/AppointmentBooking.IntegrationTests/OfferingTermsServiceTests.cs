@@ -189,6 +189,7 @@ public sealed class OfferingTermsServiceTests(PostgresFixture fixture)
                      (Guid.NewGuid(), serviceId, true, ErrorCodes.StaffNotFound),
                      (Guid.Empty, serviceId, false, ErrorCodes.StaffNotFound),
                      (setup.Staff.Id, Guid.NewGuid(), true, ErrorCodes.ServiceNotFound),
+                     (setup.Staff.Id, Guid.Empty, true, ErrorCodes.ServiceNotFound),
                      (setup.Staff.Id, Guid.Empty, false, ErrorCodes.ServiceNotFound),
                      (setup.Staff.Id, serviceId, false, ErrorCodes.StaffServiceNotFound)
                  })
@@ -305,7 +306,7 @@ public sealed class OfferingTermsServiceTests(PostgresFixture fixture)
     private static OfferingTermsService Service(IServiceProvider provider) => new(
         provider.GetRequiredService<ICatalogRepository>(), provider.GetRequiredService<IAccessService>(),
         provider.GetRequiredService<IStaffRepository>(), provider.GetRequiredService<IUnitOfWork>(),
-        provider.GetRequiredService<IStaffOperationLock>());
+        provider.GetRequiredService<IStaffOperationLock>(), provider.GetRequiredService<ICatalogServiceLock>());
 
     private async Task<Guid> AddService()
     {

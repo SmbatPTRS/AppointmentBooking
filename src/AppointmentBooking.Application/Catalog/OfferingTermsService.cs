@@ -7,7 +7,7 @@ namespace AppointmentBooking.Application.Catalog;
 
 /// <summary>Employee-scoped catalogue writes serialized with booking confirmation.</summary>
 public sealed class OfferingTermsService(ICatalogRepository catalog, IAccessService access,
-    IStaffRepository staff, IUnitOfWork unitOfWork, IStaffOperationLock staffLock)
+    IStaffRepository staff, IUnitOfWork unitOfWork, IStaffOperationLock staffLock, ICatalogServiceLock catalogLock)
 {
     public const string DuplicateOfferingCode = "staff_service.already_exists";
 
@@ -31,6 +31,9 @@ public sealed class OfferingTermsService(ICatalogRepository catalog, IAccessServ
             throw new AppException(ErrorCodes.StaffNotFound, "Staff member not found.", AppErrorKind.NotFound);
         }
         await using var transaction = await unitOfWork.BeginTransactionAsync(ct);
+        // Membership creation and shared-service activation share this gate. Never
+        // take it after an employee lock. Empty IDs retain ServiceNotFound below.
+        if (create && serviceId != Guid.Empty) await catalogLock.AcquireAsync(serviceId, ct);
         await staffLock.AcquireAsync(staffId, ct);
         // Adapters may have loaded the profile earlier. Refresh it after waiting,
         // before A's access check can see a stale active flag in the shared context.
