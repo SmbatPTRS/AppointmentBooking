@@ -11,12 +11,14 @@ namespace AppointmentBooking.IntegrationTests;
 public sealed class OfferingTermsTelegramTests(PostgresFixture fixture)
 {
     [Fact]
-    public async Task EmployeeCreatesAnOfferingAndTheSameTermsAppearThroughHttp()
+    public async Task EmployeeCreatesAnOfferingFromTheMainMenuAndTheSameTermsAppearThroughHttp()
     {
         await using var setup = await OfferingOverviewScenario.Create(fixture);
         var service = await NewService();
         await using var bot = new TelegramManagementBot(fixture.ConnectionString, setup.Owner.TelegramUserId);
-        await Open(bot, setup);
+        await bot.Send("/start", setup.Employee.TelegramUserId);
+        await bot.Click("Offerings", setup.Employee.TelegramUserId);
+        await bot.Click(setup.Staff.DisplayName, setup.Employee.TelegramUserId);
         await bot.Click("Create offering", setup.Employee.TelegramUserId);
         await FindService(bot, service.Name, setup.Employee.TelegramUserId);
         await bot.Click(service.Name, setup.Employee.TelegramUserId);
