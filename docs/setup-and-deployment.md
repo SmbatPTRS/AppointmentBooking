@@ -246,7 +246,7 @@ credentials, separate host ports and its own volume were used to verify:
 - The container seed command run twice without duplicate settings.
 - HTTP 200 from `/health`, `/health/db` and `/swagger/index.html`.
 - A saved settings edit surviving recreation of both API and database containers.
-- Absence of `.env`, `AGENTS.md` and `Local-context` in the final application image.
+- Absence of `.env`, `AGENTS.md` and `local-context` in the final application image.
 
 The rehearsal containers/network were removed; the isolated test volume was retained.
 No developer database, live bot credentials or real Telegram delivery were used.
